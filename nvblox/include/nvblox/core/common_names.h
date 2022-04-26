@@ -27,8 +27,14 @@ using TsdfBlock = VoxelBlock<TsdfVoxel>;
 using TsdfLayer = VoxelBlockLayer<TsdfVoxel>;
 using EsdfBlock = VoxelBlock<EsdfVoxel>;
 using EsdfLayer = VoxelBlockLayer<EsdfVoxel>;
+
+// TODO (rasaford) For TexVoxels Blocks don't make much sense as a grouping abstraction,
+// since we already have a grid of pixels within each texvoxel. (for thread level parallelism)
+// Instead the block abstraction should be skipped here.
 using ColorBlock = VoxelBlock<ColorVoxel>;
 using ColorLayer = VoxelBlockLayer<ColorVoxel>;
+using TexBlock = VoxelBlock<TexVoxel>;
+using TexLayer = VoxelBlockLayer<TexVoxel>;
 using MeshLayer = BlockLayer<MeshBlock>;
 
 }  // namespace nvblox

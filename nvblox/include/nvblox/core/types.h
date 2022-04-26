@@ -50,6 +50,8 @@ typedef Eigen::AlignedBox3f AxisAlignedBoundingBox;
 
 typedef Eigen::Isometry3f Transform;
 
+typedef unsigned char uchar;
+
 // Aligned Eigen containers
 template <typename Type>
 using AlignedVector = std::vector<Type, Eigen::aligned_allocator<Type>>;

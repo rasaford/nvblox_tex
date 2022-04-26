@@ -95,6 +95,7 @@ add_library(nvblox_lib SHARED
     src/integrators/cuda/frustum.cu
     src/integrators/cuda/projective_tsdf_integrator.cu
     src/integrators/cuda/projective_color_integrator.cu
+    src/integrators/cuda/projective_tex_integrator.cu
     src/integrators/cuda/esdf_integrator.cu
     src/integrators/esdf_integrator.cpp
     src/integrators/frustum.cpp

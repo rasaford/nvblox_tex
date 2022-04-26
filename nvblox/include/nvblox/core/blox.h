@@ -24,6 +24,7 @@ namespace nvblox {
 
 template <typename VoxelType>
 struct VoxelBlock {
+
   typedef unified_ptr<VoxelBlock> Ptr;
   typedef unified_ptr<const VoxelBlock> ConstPtr;
 
