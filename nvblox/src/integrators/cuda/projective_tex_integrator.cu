@@ -280,30 +280,7 @@ void ProjectiveTexIntegrator::updateBlocks(
   finish();
 }
 
-__global__ void checkBlocksInTruncationBandTex(
-    const VoxelBlock<TsdfVoxel>** block_device_ptrs,
-    const float truncation_distance_m,
-    bool* contains_truncation_band_device_ptr) {
-  // A single thread in each block initializes the output to 0
-  if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z == 0) {
-    contains_truncation_band_device_ptr[blockIdx.x] = 0;
-  }
-  __syncthreads();
 
-  // Get the Voxel we'll check in this thread
-  const TsdfVoxel voxel = block_device_ptrs[blockIdx.x]
-                              ->voxels[threadIdx.z][threadIdx.y][threadIdx.x];
-
-  // If this voxel in the truncation band, write the flag to say that the block
-  // should be processed.
-  // NOTE(alexmillane): There will be collision on write here. However, from my
-  // reading, all threads' writes will result in a single write to global
-  // memory. Because we only write a single value (1) it doesn't matter which
-  // thread "wins".
-  if (std::abs(voxel.distance) <= truncation_distance_m) {
-    contains_truncation_band_device_ptr[blockIdx.x] = true;
-  }
-}
 
 std::vector<Index3D>
 ProjectiveTexIntegrator::reduceBlocksToThoseInTruncationBand(
@@ -353,7 +330,7 @@ ProjectiveTexIntegrator::reduceBlocksToThoseInTruncationBand(
   const dim3 kThreadsPerBlock(kVoxelsPerSide, kVoxelsPerSide, kVoxelsPerSide);
   const int num_thread_blocks = num_blocks;
   // clang-format off
-  checkBlocksInTruncationBandTex<<<num_thread_blocks, kThreadsPerBlock, 0, integration_stream_>>>(
+  checkBlocksInTruncationBand<<<num_thread_blocks, kThreadsPerBlock, 0, integration_stream_>>>(
       truncation_band_block_ptrs_device_.data(),
       truncation_distance_m,
       block_in_truncation_band_device_.data());
