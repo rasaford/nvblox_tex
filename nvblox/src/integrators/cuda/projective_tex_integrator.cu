@@ -13,14 +13,12 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+#include <helper_math.h>
 #include "nvblox/integrators/projective_tex_integrator.h"
 
 #include "nvblox/integrators/cuda/projective_integrators_common.cuh"
 #include "nvblox/integrators/integrators_common.h"
 #include "nvblox/utils/timing.h"
-#include<helper_cuda.h>
-#inclue<helper_math.h>
-
 namespace nvblox {
 
 ProjectiveTexIntegrator::ProjectiveTexIntegrator()
@@ -413,9 +411,9 @@ __device__ inline bool getTsdfVoxelValue(
 /**
  * @brief Computes TSDF gradient for the current vertex given by threadIdx.
  * If a vertex does not have 6 neighbors, the gradient will be (0, 0, 0).
- * 
- * @param tsdf_block 
- * @param block_size 
+ *
+ * @param tsdf_block
+ * @param block_size
  * @return computed gradient
  */
 __device__ float3 computeTSDFGradient(const VoxelBlock<TsdfVoxel>* tsdf_block,
@@ -450,9 +448,7 @@ __device__ float3 computeTSDFGradient(const VoxelBlock<TsdfVoxel>* tsdf_block,
   return gradient;
 }
 
-__device__ TexVoxelDir quantizeDirection(float3 dir) {
-  if (length()) 
-}
+__device__ TexVoxelDir quantizeDirection(float3 dir) { if (length()) }
 
 __global__ void updateVoxelNormals(
     const VoxelBlock<TsdfVoxel>** tsdf_block_ptrs,
@@ -467,8 +463,8 @@ __global__ void updateVoxelNormals(
   // Since we are working in an TSDF, where the distance of each voxel to the
   // surface implicitly defines the surface boundary, the normal of each voxel
   // is just the normalized gradient.
-  const float3 gradient = computeTSDFGradient(tsdf_block_ptrs[blockIdx.x], block_size);
-
+  const float3 gradient =
+      computeTSDFGradient(tsdf_block_ptrs[blockIdx.x], block_size);
 }
 
 void ProjectiveTexIntegrator::updateVoxelNormalDirections(

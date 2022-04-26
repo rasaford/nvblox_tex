@@ -40,6 +40,10 @@ include(thirdparty/eigen/eigen.cmake)
 message(STATUS "Downloading STDGPU")
 include(thirdparty/stdgpu/stdgpu.cmake)
 
+# Build cuda-samples as part of this
+message(STATUS "Downloading cuda-samples")
+include(thirdparty/cuda-samples/cuda-samples.cmake)
+
 # Include dem deps
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 find_package(CUDA REQUIRED)
@@ -123,6 +127,7 @@ target_link_libraries(nvblox_lib PUBLIC
     nvblox_gpu_hash
     nvblox_cuda_check
     nvblox_eigen
+    cuda-samples
 )
 target_link_options(nvblox_lib PUBLIC ${nvblox_link_options})
 target_include_directories(nvblox_lib PUBLIC 
@@ -189,7 +194,7 @@ include(GNUInstallDirs)
 set_target_properties(stdgpu PROPERTIES INTERFACE_LINK_LIBRARIES "")
 
 install( 
-  TARGETS nvblox_lib nvblox_gpu_hash nvblox_cuda_check stdgpu nvblox_eigen
+  TARGETS nvblox_lib nvblox_gpu_hash nvblox_cuda_check stdgpu nvblox_eigen cuda-samples
   EXPORT nvbloxTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/${PROJECT_NAME}
