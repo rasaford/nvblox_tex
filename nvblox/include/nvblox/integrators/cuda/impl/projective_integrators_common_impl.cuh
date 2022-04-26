@@ -46,7 +46,30 @@ __device__ inline bool projectThreadVoxel(
   return true;
 }
 
-__global__ inline void checkBlocksInTruncationBand(
+__device__ inline bool projectThreadTexel(
+    const Index3D* block_indices_device_ptr, const Camera& camera,
+    const Transform& T_C_L, const float block_size, const Index2D& texel_idx,
+    const TexVoxelDir dir, Vector2f* u_px_ptr, float* u_depth_ptr) {
+  const Index3D block_idx = block_indices_device_ptr[blockIdx.x];
+  const Index3D voxel_idx(threadIdx.z, threadIdx.y, threadIdx.x);
+
+  // Texel center point
+  const Vector3f p_texel_center_L = getCenterPositionForTexel(
+      block_size, block_idx, voxel_idx, texel_idx, dir);
+  // To camera frame
+  const Vector3f p_texel_center_C = T_C_L * p_texel_center_L;
+
+  // Project to image plane
+  if (!camera.project(p_texel_center_C, u_px_ptr)) {
+    return false;
+  }
+
+  // Depth
+  *u_depth_ptr = p_texel_center_C.z();
+  return true;
+}
+
+__global__ void checkBlocksInTruncationBand(
     const VoxelBlock<TsdfVoxel>** block_device_ptrs,
     const float truncation_distance_m,
     bool* contains_truncation_band_device_ptr) {
@@ -66,9 +89,30 @@ __global__ inline void checkBlocksInTruncationBand(
   // reading, all threads' writes will result in a single write to global
   // memory. Because we only write a single value (1) it doesn't matter which
   // thread "wins".
+
   if (std::abs(voxel.distance) <= truncation_distance_m) {
     contains_truncation_band_device_ptr[blockIdx.x] = true;
   }
+}
+
+__device__ inline Color blendTwoColors(const Color& first_color,
+                                       float first_weight,
+                                       const Color& second_color,
+                                       float second_weight) {
+  float total_weight = first_weight + second_weight;
+
+  first_weight /= total_weight;
+  second_weight /= total_weight;
+
+  Color new_color;
+  new_color.r = static_cast<uint8_t>(std::round(
+      first_color.r * first_weight + second_color.r * second_weight));
+  new_color.g = static_cast<uint8_t>(std::round(
+      first_color.g * first_weight + second_color.g * second_weight));
+  new_color.b = static_cast<uint8_t>(std::round(
+      first_color.b * first_weight + second_color.b * second_weight));
+
+  return new_color;
 }
 
 }  // namespace nvblox

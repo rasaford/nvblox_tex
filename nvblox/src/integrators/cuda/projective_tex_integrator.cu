@@ -99,51 +99,36 @@ void ProjectiveTexIntegrator::integrateFrame(
   }
 }
 
-// __device__ inline Color blendTwoColors(const Color& first_color,
-//                                        float first_weight,
-//                                        const Color& second_color,
-//                                        float second_weight) {
-//   float total_weight = first_weight + second_weight;
 
-//   first_weight /= total_weight;
-//   second_weight /= total_weight;
+__device__ inline void updateTexel(const Color& color_measured,
+                                   TexVoxel* tex_voxel, Index2D& texel_idx,
+                                   const float voxel_depth_m,
+                                   const float truncation_distance_m,
+                                   const float max_weight) {
+  // NOTE(alexmillane): We integrate all voxels passed to this function, We
+  // should probably not do this. We should no update some based on occlusion
+  // and their distance in the distance field....
+  // TODO(alexmillane): The above.
 
-//   Color new_color;
-//   new_color.r = static_cast<uint8_t>(std::round(
-//       first_color.r * first_weight + second_color.r * second_weight));
-//   new_color.g = static_cast<uint8_t>(std::round(
-//       first_color.g * first_weight + second_color.g * second_weight));
-//   new_color.b = static_cast<uint8_t>(std::round(
-//       first_color.b * first_weight + second_color.b * second_weight));
-
-//   return new_color;
-// }
-
-// __device__ inline bool updateVoxel(const Color color_measured,
-//                                    ColorVoxel* voxel_ptr,
-//                                    const float voxel_depth_m,
-//                                    const float truncation_distance_m,
-//                                    const float max_weight) {
-//   // NOTE(alexmillane): We integrate all voxels passed to this function, We
-//   // should probably not do this. We should no update some based on occlusion
-//   // and their distance in the distance field....
-//   // TODO(alexmillane): The above.
-
-//   // Read CURRENT voxel values (from global GPU memory)
-//   const Color voxel_color_current = voxel_ptr->color;
-//   const float voxel_weight_current = voxel_ptr->weight;
-//   // Fuse
-//   constexpr float measurement_weight = 1.0f;
-//   const Color fused_color =
-//       blendTwoColors(voxel_color_current, voxel_weight_current, color_measured,
-//                      measurement_weight);
-//   const float weight =
-//       fmin(measurement_weight + voxel_weight_current, max_weight);
-//   // Write NEW voxel values (to global GPU memory)
-//   voxel_ptr->color = fused_color;
-//   voxel_ptr->weight = weight;
-//   return true;
-// }
+  // Read CURRENT voxel values (from global GPU memory)
+  const Color& texel_color_current = (*tex_voxel)(texel_idx);
+  const float texel_weight_current = tex_voxel->weight;
+  // TODO: (rasaford) compute measurement weight based on e.g.
+  // - size of the projected texel in the image
+  // - sharpness of the projected area in the image (to compensate motion blur)
+  // - how flat on we're looking at the texel projection
+  // - if the texel is on a boundary
+  // - ...
+  constexpr float measurement_weight = 1.0f;
+  const Color fused_color =
+      blendTwoColors(texel_color_current, texel_weight_current, color_measured,
+                     measurement_weight);
+  const float weight =
+      fmin(measurement_weight + texel_weight_current, max_weight);
+  // Write NEW voxel values (to global GPU memory)
+  (*tex_voxel)(texel_idx) = fused_color;
+  tex_voxel->weight = weight;
+}
 
 __global__ void integrateBlocks(
     const Index3D* block_indices_device_ptr, const Camera camera,
@@ -200,16 +185,24 @@ __global__ void integrateBlocks(
   TexVoxel* voxel_ptr = &(block_device_ptrs[blockIdx.x]
                               ->voxels[threadIdx.z][threadIdx.y][threadIdx.x]);
 
+  Color image_value;
   // loop over all colors in the TexVoxel patch
   for (int row = 0; row < voxel_ptr->kPatchWidth; ++row) {
     for (int col = 0; col < voxel_ptr->kPatchWidth; ++col) {
-      // u_px =
+      const Index2D texel_idx(row, col);
+      // Project the current texel_idx to image space. If it's outside the
+      // image, go to the next texel.
+      if (!projectThreadTexel(block_indices_device_ptr, camera, T_C_L,
+                              block_size, texel_idx, voxel_ptr->dir, &u_px,
+                              &voxel_depth_m)) {
+        continue;
+      }
+      // get image color at current u_px by linear interpolation
+      if (!interpolation::interpolate2DLinear<Color>(
+              color_image, u_px, color_rows, color_cols, &image_value)) {
+        continue;
+      }
     }
-  }
-  Color image_value;
-  if (!interpolation::interpolate2DLinear<Color>(color_image, u_px, color_rows,
-                                                 color_cols, &image_value)) {
-    return;
   }
 
   // Update the voxel using the update rule for this layer type
@@ -279,8 +272,6 @@ void ProjectiveTexIntegrator::updateBlocks(
   // Finish processing of the frame before returning control
   finish();
 }
-
-
 
 std::vector<Index3D>
 ProjectiveTexIntegrator::reduceBlocksToThoseInTruncationBand(
@@ -398,7 +389,7 @@ __device__ inline bool getTsdfVoxelValue(const TsdfBlock* tsdf_block,
  *
  * @param tsdf_block
  * @param block_size
- * @param gradient 
+ * @param gradient
  */
 __device__ bool computeTSDFGradient(const TsdfBlock* tsdf_block,
                                     const float block_size,
@@ -477,9 +468,9 @@ __global__ void setTexVoxelDirections(
   // surface implicitly defines the surface boundary, the normal of each voxel
   // is just the normalized gradient.
   Vector3f gradient;
-  const bool valid  = computeTSDFGradient(tsdf_block, block_size, gradient);
+  const bool valid = computeTSDFGradient(tsdf_block, block_size, gradient);
   if (valid) {
-    tex_voxel.dir =  quantizeDirection(gradient.normalized());
+    tex_voxel.dir = quantizeDirection(gradient.normalized());
   }
 
   // TODO: (rasaford) this is still quite hacky. Remove the Block abstraction

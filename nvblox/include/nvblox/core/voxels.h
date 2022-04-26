@@ -76,10 +76,18 @@ struct TexVoxelTemplate {
   inline ElementType& operator()(const int row_idx, const int col_idx) {
     return colors[row_idx * kPatchWidth + col_idx];
   }
+  inline ElementType operator()(const Index2D& idx) const {
+    return colors[idx(0) * kPatchWidth + idx(1)];
+  }
+  inline ElementType& operator()(const Index2D& idx) {
+    return colors[idx(0) * kPatchWidth + idx(1)];
+  }
   inline ElementType operator()(const int linear_idx) const {
     return colors[linear_idx];
   }
-  inline ElementType& operator()(const int linear_idx) { return colors[linear_idx]; }
+  inline ElementType& operator()(const int linear_idx) {
+    return colors[linear_idx];
+  }
 
   // hopefully this value does not get stored for every TexVoxel this way
   static constexpr int kPatchWidth = _PatchWidth;

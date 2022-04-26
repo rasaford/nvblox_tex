@@ -16,6 +16,7 @@ limitations under the License.
 #pragma once
 
 #include "nvblox/core/types.h"
+#include "nvblox/core/voxels.h"
 
 namespace nvblox {
 
@@ -45,6 +46,22 @@ __host__ __device__ inline Vector3f getCenterPostionFromBlockIndexAndVoxelIndex(
     const float block_size, const Index3D& block_index,
     const Index3D& voxel_index);
 
+/**
+ * @brief Transfroms the texel_index to 2D texel coordiantes
+ *
+ * @param texel_index
+ * @param voxels_per_side
+ * @param voxel_size
+ * @return Vector2f
+ */
+__host__ __device__ inline Vector2f getTexelCoordsfromIdx(
+    const Index2D& texel_index, const int texels_per_side,
+    const float voxel_size);
+
+__host__ __device__ inline Vector3f getCenterPositionForTexel(
+    const float block_size, const Index3D& block_index,
+    const Index3D& voxel_index, const Index2D& texel_index,
+    const TexVoxelDir dir);
 }  // namespace nvblox
 
 #include "nvblox/core/impl/indexing_impl.h"

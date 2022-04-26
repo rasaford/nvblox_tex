@@ -31,10 +31,20 @@ __device__ inline bool projectThreadVoxel(
     const Transform& T_C_L, const float block_size, Eigen::Vector2f* u_px_ptr,
     float* u_depth_ptr);
 
-__global__ inline void checkBlocksInTruncationBand(
+__device__ inline bool projectThreadTexel(
+    const Index3D* block_indices_device_ptr, const Camera& camera,
+    const Transform& T_C_L, const float block_size, const Index2D& texel_idx,
+    const TexVoxelDir dir, Vector2f* u_px_ptr, float* u_depth_ptr);
+
+__global__ void checkBlocksInTruncationBand(
     const VoxelBlock<TsdfVoxel>** block_device_ptrs,
     const float truncation_distance_m,
     bool* contains_truncation_band_device_ptr);
+
+__device__ inline Color blendTwoColors(const Color& first_color,
+                                       float first_weight,
+                                       const Color& second_color,
+                                       float second_weight);
 
 }  // namespace nvblox
 

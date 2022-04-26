@@ -18,6 +18,7 @@ limitations under the License.
 #include <glog/logging.h>
 
 #include "nvblox/core/blox.h"
+#include "nvblox/core/voxels.h"
 
 namespace nvblox {
 
@@ -89,6 +90,48 @@ Vector3f getCenterPostionFromBlockIndexAndVoxelIndex(
   return getPositionFromBlockIndexAndVoxelIndex(block_size, block_index,
                                                 voxel_index) +
          Vector3f(half_voxel_size, half_voxel_size, half_voxel_size);
+}
+
+Vector2f getTexelCoordsfromIdx(const Index2D& texel_index,
+                               const int texels_per_side,
+                               const float voxel_size) {
+  const float half_texel = texels_per_side / 2.0f;
+  const float texel_size = voxel_size / texels_per_side;
+  return (texel_size / (texel_size + 1)) * (voxel_size / texels_per_side) *
+         (texel_index.cast<float>() - Vector2f(half_texel, half_texel));
+}
+
+Vector3f getCenterPositionForTexel(const float block_size,
+                                   const Index3D& block_index,
+                                   const Index3D& voxel_index,
+                                   const Index2D& texel_index,
+                                   const TexVoxelDir dir) {
+  const Vector3f voxel_center = getCenterPostionFromBlockIndexAndVoxelIndex(
+      block_size, block_index, voxel_index);
+  const float voxel_size = block_size / VoxelBlock<bool>::kVoxelsPerSide;
+  const Vector2f texel_coords =
+      getTexelCoordsfromIdx(texel_index, TexVoxel::kPatchWidth, voxel_size);
+  Vector3f pos;
+
+  // TODO: (rasaford) is fallthrough correct here?
+  switch (dir) {
+    case TexVoxelDir::X_PLUS:
+    case TexVoxelDir::X_MINUS:
+      pos << 0.0f, texel_coords(0), texel_coords(1);
+      break;
+    case TexVoxelDir::Y_PLUS:
+    case TexVoxelDir::Y_MINUS:
+      pos << texel_coords(0), 0.0f, texel_coords(1);
+      break;
+    case TexVoxelDir::Z_PLUS:
+    case TexVoxelDir::Z_MINUS:
+      pos << texel_coords(0), texel_coords(1), 0.0f;
+      break;
+    default:
+      pos << 0.0f, 0.0f, 0.0f;
+      break;
+  }
+  return pos;
 }
 
 }  // namespace nvblox
