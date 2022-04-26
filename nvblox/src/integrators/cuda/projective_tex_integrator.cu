@@ -75,7 +75,8 @@ void ProjectiveTexIntegrator::integrateFrame(
   // Update normal directions for all voxels which do not have a voxel dir set
   // already
   timing::Timer update_normals_timer("tex/integrate/update_normals");
-  updateVoxelNormalDirections(tsdf_layer, block_indices, truncation_distance_m);
+  updateVoxelNormalDirections(tsdf_layer, tex_layer, block_indices,
+                              truncation_distance_m);
   update_normals_timer.Stop();
 
   // Create a synthetic depth image
@@ -98,51 +99,51 @@ void ProjectiveTexIntegrator::integrateFrame(
   }
 }
 
-__device__ inline Color blendTwoColors(const Color& first_color,
-                                       float first_weight,
-                                       const Color& second_color,
-                                       float second_weight) {
-  float total_weight = first_weight + second_weight;
+// __device__ inline Color blendTwoColors(const Color& first_color,
+//                                        float first_weight,
+//                                        const Color& second_color,
+//                                        float second_weight) {
+//   float total_weight = first_weight + second_weight;
 
-  first_weight /= total_weight;
-  second_weight /= total_weight;
+//   first_weight /= total_weight;
+//   second_weight /= total_weight;
 
-  Color new_color;
-  new_color.r = static_cast<uint8_t>(std::round(
-      first_color.r * first_weight + second_color.r * second_weight));
-  new_color.g = static_cast<uint8_t>(std::round(
-      first_color.g * first_weight + second_color.g * second_weight));
-  new_color.b = static_cast<uint8_t>(std::round(
-      first_color.b * first_weight + second_color.b * second_weight));
+//   Color new_color;
+//   new_color.r = static_cast<uint8_t>(std::round(
+//       first_color.r * first_weight + second_color.r * second_weight));
+//   new_color.g = static_cast<uint8_t>(std::round(
+//       first_color.g * first_weight + second_color.g * second_weight));
+//   new_color.b = static_cast<uint8_t>(std::round(
+//       first_color.b * first_weight + second_color.b * second_weight));
 
-  return new_color;
-}
+//   return new_color;
+// }
 
-__device__ inline bool updateVoxel(const Color color_measured,
-                                   ColorVoxel* voxel_ptr,
-                                   const float voxel_depth_m,
-                                   const float truncation_distance_m,
-                                   const float max_weight) {
-  // NOTE(alexmillane): We integrate all voxels passed to this function, We
-  // should probably not do this. We should no update some based on occlusion
-  // and their distance in the distance field....
-  // TODO(alexmillane): The above.
+// __device__ inline bool updateVoxel(const Color color_measured,
+//                                    ColorVoxel* voxel_ptr,
+//                                    const float voxel_depth_m,
+//                                    const float truncation_distance_m,
+//                                    const float max_weight) {
+//   // NOTE(alexmillane): We integrate all voxels passed to this function, We
+//   // should probably not do this. We should no update some based on occlusion
+//   // and their distance in the distance field....
+//   // TODO(alexmillane): The above.
 
-  // Read CURRENT voxel values (from global GPU memory)
-  const Color voxel_color_current = voxel_ptr->color;
-  const float voxel_weight_current = voxel_ptr->weight;
-  // Fuse
-  constexpr float measurement_weight = 1.0f;
-  const Color fused_color =
-      blendTwoColors(voxel_color_current, voxel_weight_current, color_measured,
-                     measurement_weight);
-  const float weight =
-      fmin(measurement_weight + voxel_weight_current, max_weight);
-  // Write NEW voxel values (to global GPU memory)
-  voxel_ptr->color = fused_color;
-  voxel_ptr->weight = weight;
-  return true;
-}
+//   // Read CURRENT voxel values (from global GPU memory)
+//   const Color voxel_color_current = voxel_ptr->color;
+//   const float voxel_weight_current = voxel_ptr->weight;
+//   // Fuse
+//   constexpr float measurement_weight = 1.0f;
+//   const Color fused_color =
+//       blendTwoColors(voxel_color_current, voxel_weight_current, color_measured,
+//                      measurement_weight);
+//   const float weight =
+//       fmin(measurement_weight + voxel_weight_current, max_weight);
+//   // Write NEW voxel values (to global GPU memory)
+//   voxel_ptr->color = fused_color;
+//   voxel_ptr->weight = weight;
+//   return true;
+// }
 
 __global__ void integrateBlocks(
     const Index3D* block_indices_device_ptr, const Camera camera,
@@ -199,11 +200,9 @@ __global__ void integrateBlocks(
   TexVoxel* voxel_ptr = &(block_device_ptrs[blockIdx.x]
                               ->voxels[threadIdx.z][threadIdx.y][threadIdx.x]);
 
-  // Get voxel normal direction in tsdf to set TexVoxel direction
-
   // loop over all colors in the TexVoxel patch
-  for (int row = 0; row < voxel_ptr->rows(); ++row) {
-    for (int col = 0; col < voxel_ptr->cols(); ++col) {
+  for (int row = 0; row < voxel_ptr->kPatchWidth; ++row) {
+    for (int col = 0; col < voxel_ptr->kPatchWidth; ++col) {
       // u_px =
     }
   }
@@ -281,7 +280,7 @@ void ProjectiveTexIntegrator::updateBlocks(
   finish();
 }
 
-__global__ void checkBlocksInTruncationBand(
+__global__ void checkBlocksInTruncationBandTex(
     const VoxelBlock<TsdfVoxel>** block_device_ptrs,
     const float truncation_distance_m,
     bool* contains_truncation_band_device_ptr) {
@@ -354,7 +353,7 @@ ProjectiveTexIntegrator::reduceBlocksToThoseInTruncationBand(
   const dim3 kThreadsPerBlock(kVoxelsPerSide, kVoxelsPerSide, kVoxelsPerSide);
   const int num_thread_blocks = num_blocks;
   // clang-format off
-  checkBlocksInTruncationBand<<<num_thread_blocks, kThreadsPerBlock, 0, integration_stream_>>>(
+  checkBlocksInTruncationBandTex<<<num_thread_blocks, kThreadsPerBlock, 0, integration_stream_>>>(
       truncation_band_block_ptrs_device_.data(),
       truncation_distance_m,
       block_in_truncation_band_device_.data());
@@ -377,6 +376,22 @@ ProjectiveTexIntegrator::reduceBlocksToThoseInTruncationBand(
   return block_indices_check_2;
 }
 
+template <typename BlockType>
+__device__ inline bool isValidBlockIndex(const int x, const int y,
+                                         const int z) {
+  // Check if the given voxel index is within the current block
+  if (x < 0 || x >= BlockType::kVoxelsPerSide) {
+    return false;
+  }
+  if (y < 0 || y >= BlockType::kVoxelsPerSide) {
+    return false;
+  }
+  if (z < 0 || z >= BlockType::kVoxelsPerSide) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * @brief Get the TSDF value at the current voxel, if the given voxel index is
  * still within the given block
@@ -388,19 +403,11 @@ ProjectiveTexIntegrator::reduceBlocksToThoseInTruncationBand(
  * @param distance output distance. Only written to if the return value == true
  * @return if the voxel index is within the given block
  */
-__device__ inline bool getTsdfVoxelValue(
-    const VoxelBlock<TsdfVoxel>* tsdf_block, const int x, const int y,
-    const int z, float& distance) {
-  // Check if the given voxel index is within the current block
-  if (x < 0 || x >= VoxelBlock<TsdfVoxel>::kVoxelsPerSide) {
-    return false;
-  }
-  if (y < 0 || y >= VoxelBlock<TsdfVoxel>::kVoxelsPerSide) {
-    return false;
-  }
-  if (z < 0 || z >= VoxelBlock<TsdfVoxel>::kVoxelsPerSide) {
-    return false;
-  }
+__device__ inline bool getTsdfVoxelValue(const TsdfBlock* tsdf_block,
+                                         const int x, const int y, const int z,
+                                         float& distance) {
+  if (!isValidBlockIndex<TsdfBlock>(x, y, z)) return;
+
   const TsdfVoxel& voxel = tsdf_block->voxels[x][y][z];
   // TODO(rasaford) take voxel weight into account here
   // distance = voxel.distance * voxel.weight;
@@ -414,16 +421,17 @@ __device__ inline bool getTsdfVoxelValue(
  *
  * @param tsdf_block
  * @param block_size
- * @return computed gradient
+ * @param gradient 
  */
-__device__ float3 computeTSDFGradient(const VoxelBlock<TsdfVoxel>* tsdf_block,
-                                      const float block_size) {
+__device__ bool computeTSDFGradient(const TsdfBlock* tsdf_block,
+                                    const float block_size,
+                                    Vector3f& gradient) {
   // voxel size is block size divided by number of blocks per side
   const float voxel_size =
       block_size / static_cast<float>(tsdf_block->kVoxelsPerSide);
   const float voxel_size_2x = 2 * voxel_size;
   // the voxel index is the current threadIndex
-  const uint3& voxel_idx = threadIdx;
+  const int3 voxel_idx = make_int3(threadIdx);
   float dist_x_plus = 0, dist_x_minus = 0, dist_y_plus = 0, dist_y_minus = 0,
         dist_z_plus = 0, dist_z_minus = 0;
   bool valid = true;
@@ -437,38 +445,110 @@ __device__ float3 computeTSDFGradient(const VoxelBlock<TsdfVoxel>* tsdf_block,
   valid &= getTsdfVoxelValue(tsdf_block, voxel_idx.x,     voxel_idx.y - 1,  voxel_idx.z,      dist_y_minus);
   valid &= getTsdfVoxelValue(tsdf_block, voxel_idx.x,     voxel_idx.y,      voxel_idx.z - 1,  dist_z_minus);
   // clang-format on
-  // approximate gradient by finite differences
-  const float3 gradient =
-      make_float3((dist_x_plus - dist_x_minus) / voxel_size_2x,
-                  (dist_y_plus - dist_y_minus) / voxel_size_2x,
-                  (dist_z_plus - dist_z_minus) / voxel_size_2x);
   if (!valid) {
-    return make_float3(0.0f, 0.0f, 0.0f);
+    return false;
   }
-  return gradient;
+  // approximate gradient by finite differences
+  gradient << (dist_x_plus - dist_x_minus) / voxel_size_2x,
+      (dist_y_plus - dist_y_minus) / voxel_size_2x,
+      (dist_z_plus - dist_z_minus) / voxel_size_2x;
+  return true;
 }
 
-__device__ TexVoxelDir quantizeDirection(float3 dir) { if (length()) }
+/**
+ * @brief quantizes the given direction vector (normalized) into one of
+ * TexVoxelDir directions
+ *
+ * @param normal **normalized** direcction vector
+ * @return quantized direction
+ */
+__device__ inline TexVoxelDir quantizeDirection(const Vector3f& dir) {
+  const Vector3f abs_dir = dir.cwiseAbs();
+  TexVoxelDir res;
+  if (abs_dir(0) >= abs_dir(1) && abs_dir(0) >= abs_dir(2)) {
+    res = dir(0) < 0 ? TexVoxelDir::X_MINUS : res = TexVoxelDir::X_PLUS;
+  } else if (abs_dir(1) >= abs_dir(2)) {
+    res = dir(1) < 0 ? TexVoxelDir::Y_MINUS : TexVoxelDir::Y_PLUS;
+  } else {
+    res = dir(2) < 0 ? TexVoxelDir::Z_MINUS : TexVoxelDir::Z_PLUS;
+  }
+  return res;
+}
 
-__global__ void updateVoxelNormals(
+/**
+ * @brief Updates the direction values for all TexVoxels where this has not been
+ * set yet
+ *
+ * @param tsdf_block_ptrs
+ * @param tex_block_ptrs
+ * @param block_size
+ */
+__global__ void setTexVoxelDirections(
     const VoxelBlock<TsdfVoxel>** tsdf_block_ptrs,
     const VoxelBlock<TexVoxel>** tex_block_ptrs, const float block_size) {
   // Get the Voxels we'll check in this thread
+  const TexBlock* tex_block = tex_block_ptrs[blockIdx.x];
+  TexVoxel tex_voxel = tex_block->voxels[threadIdx.z][threadIdx.y][threadIdx.x];
+  // only update the direction of newly allocated voxels
+  if (tex_voxel.dir != TexVoxelDir::NONE) return;
+
+  const TsdfBlock* tsdf_block = tsdf_block_ptrs[blockIdx.x];
   const TsdfVoxel tsdf_voxel =
-      tsdf_block_ptrs[blockIdx.x]
-          ->voxels[threadIdx.z][threadIdx.y][threadIdx.x];
-  TexVoxel tex_voxel =
-      tex_block_ptrs[blockIdx.x]->voxels[threadIdx.z][threadIdx.y][threadIdx.x];
+      tsdf_block->voxels[threadIdx.z][threadIdx.y][threadIdx.x];
 
   // Since we are working in an TSDF, where the distance of each voxel to the
   // surface implicitly defines the surface boundary, the normal of each voxel
   // is just the normalized gradient.
-  const float3 gradient =
-      computeTSDFGradient(tsdf_block_ptrs[blockIdx.x], block_size);
+  Vector3f gradient;
+  const bool valid  = computeTSDFGradient(tsdf_block, block_size, gradient);
+  if (valid) {
+    tex_voxel.dir =  quantizeDirection(gradient.normalized());
+  }
+
+  // TODO: (rasaford) this is still quite hacky. Remove the Block abstraction
+  // for TexVoxels to limit the number of voxels we have to do this for for
+
+  // Voxels on the edge of a block, determine the direction by majority voting
+  // of the neighboring blocks. We sync all threads processing a block here,
+  // such that all other direction values have already been written.
+  __syncthreads();
+  if (tex_voxel.dir == TexVoxelDir::NONE) {
+    const int3 voxel_idx = make_int3(threadIdx);
+    int frequencies[TexVoxelDir_count] = {};
+    // clang-format off
+    if(isValidBlockIndex<TsdfBlock>(voxel_idx.x + 1, voxel_idx.y, voxel_idx.z)) {
+      frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x + 1][voxel_idx.y][voxel_idx.z].dir)]++;
+    }
+    if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y + 1, voxel_idx.z)) {
+      frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y + 1][voxel_idx.z].dir)]++;
+    }
+    if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y, voxel_idx.z + 1)) {
+      frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y][voxel_idx.z + 1].dir)]++;
+    }
+    if(isValidBlockIndex<TsdfBlock>(voxel_idx.x - 1, voxel_idx.y, voxel_idx.z)) {
+      frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x - 1][voxel_idx.y][voxel_idx.z].dir)]++;
+    }
+    if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y - 1, voxel_idx.z)) {
+      frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y - 1][voxel_idx.z].dir)]++;
+    }
+    if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y, voxel_idx.z - 1)) {
+      frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y][voxel_idx.z - 1].dir)]++;
+    }
+    // clang-format on
+    int max_freq_idx = 0;
+    int max_freq = 0;
+    for (int i = 0; i < TexVoxelDir_count; ++i) {
+      if (frequencies[i] > max_freq) {
+        max_freq = frequencies[i];
+        max_freq_idx = i;
+      }
+    }
+    tex_voxel.dir = static_cast<TexVoxelDir>(max_freq_idx);
+  }
 }
 
 void ProjectiveTexIntegrator::updateVoxelNormalDirections(
-    const TsdfLayer& tsdf_layer, const TexLayer& tex_layer,
+    const TsdfLayer& tsdf_layer, const TexLayer* tex_layer_ptr,
     const std::vector<Index3D>& block_indices,
     const float truncation_distance_m) {
   const int num_blocks = block_indices.size();
@@ -481,7 +561,7 @@ void ProjectiveTexIntegrator::updateVoxelNormalDirections(
   std::vector<const TsdfBlock*> tsdf_block_ptrs =
       getBlockPtrsFromIndices(block_indices, tsdf_layer);
   std::vector<const TexBlock*> tex_block_ptrs =
-      getBlockPtrsFromIndices(block_indices, tex_layer);
+      getBlockPtrsFromIndices(block_indices, *tex_layer_ptr);
 
   // Expand the buffers when needed
   if (num_blocks > update_normals_tex_block_prts_device_.size()) {
@@ -504,7 +584,7 @@ void ProjectiveTexIntegrator::updateVoxelNormalDirections(
   const dim3 kThreadsPerBlock(kVoxelsPerSide, kVoxelsPerSide, kVoxelsPerSide);
   const int num_thread_blocks = num_blocks;
   // clang-format off
-  updateVoxelNormals<<<num_thread_blocks, kThreadsPerBlock, 0, integration_stream_>>>(
+  setTexVoxelDirections<<<num_thread_blocks, kThreadsPerBlock, 0, integration_stream_>>>(
       update_normals_tsdf_block_prts_device_.data(),
       update_normals_tex_block_prts_device_.data(), 
       tsdf_layer.block_size());

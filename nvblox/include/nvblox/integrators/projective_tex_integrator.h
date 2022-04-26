@@ -48,14 +48,14 @@ class ProjectiveTexIntegrator : public ProjectiveIntegratorBase {
       const float truncation_distance_m);
 
   void updateVoxelNormalDirections(const TsdfLayer& tsdf_layer,
-                                   const TexLayer& tex_layer,
+                                   const TexLayer* tex_layer_ptr,
                                    const std::vector<Index3D>& block_indices,
                                    const float truncation_distance_m);
 
  public:
   // Params
   int depth_render_ray_subsampling_factor_ = 4;
-  constexpr float kBufferExpansionFactor = 1.5f;
+  static constexpr float kBufferExpansionFactor = 1.5f;
 
   // Object to do ray tracing to generate occlusions
   // TODO(alexmillane): Expose params.

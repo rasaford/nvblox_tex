@@ -23,7 +23,7 @@ option(BUILD_TESTS "Build the C++ tests of the nvblox library" ON)
 # "display_error_number" shows a warning number with all warnings, and the
 # rest is just suppressing specific warnings from Eigen. Note that the numbers
 # keep changing with every CUDA release so this list is a bit arbitrary.
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr  --generate-line-info -lineinfo -Xcudafe --display_error_number -Xcudafe --diag_suppress=2977  -Xcudafe --diag_suppress=3057  -Xcudafe --diag_suppress=3059 ")
+set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr  --generate-line-info -lineinfo -Xcudafe --display_error_number -Xcudafe --diag_suppress=2977  -Xcudafe --diag_suppress=3057  -Xcudafe --diag_suppress=3059 -Xcudafe --diag_suppress=20236 ")
 set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} --compiler-options -fPIC")
 
 # New warning numbers above CUDA 11.2.

@@ -40,6 +40,9 @@ inline std::string toString(MemoryType memory_type) {
   }
 }
 
+// define eigen array indices to be 32 bit for better performance on cuda.
+// For more details see: https://eigen.tuxfamily.org/dox/TopicCUDA.html
+// #define EIGEN_DEFAULT_DENSE_INDEX_TYPE int;
 typedef Eigen::Vector3i Index3D;
 typedef Eigen::Vector2i Index2D;
 
@@ -51,6 +54,7 @@ typedef Eigen::AlignedBox3f AxisAlignedBoundingBox;
 typedef Eigen::Isometry3f Transform;
 
 typedef unsigned char uchar;
+
 
 // Aligned Eigen containers
 template <typename Type>

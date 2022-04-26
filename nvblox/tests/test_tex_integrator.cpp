@@ -127,33 +127,33 @@ std::vector<Eigen::Vector3f> getPointsOnASphere(const float radius,
   return sphere_points;
 }
 
-float checkSphereColor(const ColorLayer& color_layer, const Vector3f& center,
-                       const float radius, const Color& color) {
-  // Check that each sphere is colored appropriately (if observed)
-  int num_observed = 0;
-  int num_tested = 0;
-  auto check_color = [&num_tested, &num_observed](
-                         const ColorVoxel& voxel,
-                         const Color& color_2) -> void {
-    ++num_tested;
-    if (voxel.weight >= 1.0f) {
-      EXPECT_EQ(voxel.color, color_2);
-      ++num_observed;
-    }
-  };
+// float checkSphereColor(const ColorLayer& color_layer, const Vector3f& center,
+//                        const float radius, const Color& color) {
+//   // Check that each sphere is colored appropriately (if observed)
+//   int num_observed = 0;
+//   int num_tested = 0;
+//   auto check_color = [&num_tested, &num_observed](
+//                          const ColorVoxel& voxel,
+//                          const Color& color_2) -> void {
+//     ++num_tested;
+//     if (voxel.weight >= 1.0f) {
+//       EXPECT_EQ(voxel.color, color_2);
+//       ++num_observed;
+//     }
+//   };
 
-  const std::vector<Eigen::Vector3f> sphere_points =
-      getPointsOnASphere(radius, center);
-  for (const Vector3f p : sphere_points) {
-    const ColorVoxel* color_voxel;
-    EXPECT_TRUE(getVoxelAtPosition<ColorVoxel>(color_layer, p, &color_voxel));
-    check_color(*color_voxel, color);
-  }
+//   const std::vector<Eigen::Vector3f> sphere_points =
+//       getPointsOnASphere(radius, center);
+//   for (const Vector3f p : sphere_points) {
+//     const ColorVoxel* color_voxel;
+//     EXPECT_TRUE(getVoxelAtPosition<ColorVoxel>(color_layer, p, &color_voxel));
+//     check_color(*color_voxel, color);
+//   }
 
-  const float ratio_observed_points =
-      static_cast<float>(num_observed) / static_cast<float>(num_tested);
-  return ratio_observed_points;
-}
+//   const float ratio_observed_points =
+//       static_cast<float>(num_observed) / static_cast<float>(num_tested);
+//   return ratio_observed_points;
+// }
 
 // TEST_F(ColorIntegrationTest, TruncationBandTest) {
 //   // Check the GPU version against a hand-rolled CPU implementation.
@@ -259,9 +259,9 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
   // 0)
   auto color_check_lambda = [&target_color](const Index3D& voxel_idx,
                                             const TexVoxel* voxel) -> void {
-    if (voxel->weight() > 0.0f) {
-      for (size_t col = 0; col < voxel->width(); ++col) {
-        for (size_t row = 0; row < voxel->height(); ++row) {
+    if (voxel->weight > 0.0f) {
+      for (size_t col = 0; col < voxel->kPatchWidth; ++col) {
+        for (size_t row = 0; row < voxel->kPatchWidth; ++row) {
           EXPECT_EQ((*voxel)(row, col), target_color);
         }
       }
@@ -282,7 +282,7 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
   for (const Vector3f p : sphere_points) {
     const TexVoxel* tex_voxel;
     EXPECT_TRUE(getVoxelAtPosition<TexVoxel>(tex_layer, p, &tex_voxel));
-    if (tex_voxel->weight() >= 1.0f) {
+    if (tex_voxel->weight >= 1.0f) {
       ++num_points_on_sphere_surface_observed;
     }
   }

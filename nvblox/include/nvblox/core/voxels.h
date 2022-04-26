@@ -49,57 +49,46 @@ struct ColorVoxel {
   float weight = 0.0f;
 };
 
-
 // Six possible directors for each 2d texture plane to be facing in
 // 3d space. The orientation of each plane will be determined at allocation time
-enum TexVoxelDir {
-  X_PLUS, X_MINUS,
-  Y_PLUS, Y_MINUS,
-  Z_PLUS, Z_MINUS,
+enum class TexVoxelDir {
+  X_PLUS,
+  X_MINUS,
+  Y_PLUS,
+  Y_MINUS,
+  Z_PLUS,
+  Z_MINUS,
   NONE
 };
+// number of elements in the enum has to always match
+static constexpr int TexVoxelDir_count = 7;
 
 // Each TexVoxel is a 2d grid of colors for each voxel
 template <typename _ElementType, int _PatchWidth>
-class TexVoxelTemplate {
- public:
+struct TexVoxelTemplate {
   // make the template params queryable as TexVoxelTemplate::ElementType etc.
   typedef _ElementType ElementType;
 
-  constexpr int rows() const { return kPatchWidth; }
-  constexpr int cols() const { return kPatchWidth; }
-  constexpr int width() const { return kPatchWidth; }
-  constexpr int height() const { return kPatchWidth; }
-  constexpr int numel() const { return kPatchWidth * kPatchWidth }
-  inline float weight() const { return weight; }
-  inline float& weight() { return weight; }
-
   // Access
   inline ElementType operator()(const int row_idx, const int col_idx) const {
-    return image::access(row_idx, col_idx, width(), colors_);
+    return colors[row_idx * kPatchWidth + col_idx];
   }
   inline ElementType& operator()(const int row_idx, const int col_idx) {
-    return image::access(row_idx, col_idx, width(), colors_);
+    return colors[row_idx * kPatchWidth + col_idx];
   }
   inline ElementType operator()(const int linear_idx) const {
-    return image::access(linear_idx, colors_);
+    return colors[linear_idx];
   }
-  inline ElementType& operator()(const int linear_idx) {
-    return image::access(linear_idx, colors_);
-  }
+  inline ElementType& operator()(const int linear_idx) { return colors[linear_idx]; }
 
-  // raw data access
-  inline ElementType* data() { return colors_; }
-  inline const ElementType* dataConst() { return colors_; }
-
- protected:
   // hopefully this value does not get stored for every TexVoxel this way
   static constexpr int kPatchWidth = _PatchWidth;
   // patch size in pixels. Each TexVoxel is of size (kPatchWidth, kPatchWidth)
-  ElementType colors_[kPatchWidth * kPatchWidth];
+  Color colors[kPatchWidth * kPatchWidth];
   // how confident we are in this observation
-  float weight_ = 0.0;
-  // any of six asis aligned directions the 2d texture plane is facing in 3d space
+  float weight = 0.0;
+  // any of six asis aligned directions the 2d texture plane is facing in 3d
+  // space
   TexVoxelDir dir = TexVoxelDir::NONE;
 };
 
