@@ -61,7 +61,7 @@ __host__ __device__ inline Vector2f getTexelCoordsfromIdx(
 __host__ __device__ inline Vector3f getCenterPositionForTexel(
     const float block_size, const Index3D& block_index,
     const Index3D& voxel_index, const Index2D& texel_index,
-    const TexVoxelDir dir);
+    const TexVoxel::Dir dir);
 }  // namespace nvblox
 
 #include "nvblox/core/impl/indexing_impl.h"

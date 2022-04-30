@@ -49,23 +49,24 @@ struct ColorVoxel {
   float weight = 0.0f;
 };
 
-// Six possible directors for each 2d texture plane to be facing in
-// 3d space. The orientation of each plane will be determined at allocation time
-enum class TexVoxelDir {
-  X_PLUS,
-  X_MINUS,
-  Y_PLUS,
-  Y_MINUS,
-  Z_PLUS,
-  Z_MINUS,
-  NONE
-};
-// number of elements in the enum has to always match
-static constexpr int TexVoxelDir_count = 7;
-
 // Each TexVoxel is a 2d grid of colors for each voxel
 template <typename _ElementType, int _PatchWidth>
 struct TexVoxelTemplate {
+  // Six possible directors for each 2d texture plane to be facing in
+  // 3d space. The orientation of each plane will be determined at allocation
+  // time
+  enum class Dir {
+    X_PLUS,
+    X_MINUS,
+    Y_PLUS,
+    Y_MINUS,
+    Z_PLUS,
+    Z_MINUS,
+    NONE
+  };
+  // number of elements in the enum has to always match
+  static constexpr int Dir_count= 7;
+
   // make the template params queryable as TexVoxelTemplate::ElementType etc.
   typedef _ElementType ElementType;
 
@@ -97,7 +98,7 @@ struct TexVoxelTemplate {
   float weight = 0.0;
   // any of six asis aligned directions the 2d texture plane is facing in 3d
   // space
-  TexVoxelDir dir = TexVoxelDir::NONE;
+  Dir dir = Dir::NONE;
 };
 
 // For convenience we define this non-templated version of TexVoxel.

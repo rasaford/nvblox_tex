@@ -377,10 +377,13 @@ __device__ inline bool getTsdfVoxelValue(const TsdfBlock* tsdf_block,
   if (!isValidBlockIndex<TsdfBlock>(x, y, z)) return;
 
   const TsdfVoxel& voxel = tsdf_block->voxels[x][y][z];
-  // TODO(rasaford) take voxel weight into account here
-  // distance = voxel.distance * voxel.weight;
-  distance = voxel.distance;
-  return true;
+
+  // if the voxel is outside the truncation band, the weight will be 0
+  if (voxel.weight > 0.0f) {
+    distance = voxel.distance;
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -425,20 +428,20 @@ __device__ bool computeTSDFGradient(const TsdfBlock* tsdf_block,
 
 /**
  * @brief quantizes the given direction vector (normalized) into one of
- * TexVoxelDir directions
+ * TexVoxel::Dir directions
  *
  * @param normal **normalized** direcction vector
  * @return quantized direction
  */
-__device__ inline TexVoxelDir quantizeDirection(const Vector3f& dir) {
+__device__ inline TexVoxel::Dir quantizeDirection(const Vector3f& dir) {
   const Vector3f abs_dir = dir.cwiseAbs();
-  TexVoxelDir res;
+  TexVoxel::Dir res;
   if (abs_dir(0) >= abs_dir(1) && abs_dir(0) >= abs_dir(2)) {
-    res = dir(0) < 0 ? TexVoxelDir::X_MINUS : res = TexVoxelDir::X_PLUS;
+    res = dir(0) < 0 ? TexVoxel::Dir::X_MINUS : res = TexVoxel::Dir::X_PLUS;
   } else if (abs_dir(1) >= abs_dir(2)) {
-    res = dir(1) < 0 ? TexVoxelDir::Y_MINUS : TexVoxelDir::Y_PLUS;
+    res = dir(1) < 0 ? TexVoxel::Dir::Y_MINUS : TexVoxel::Dir::Y_PLUS;
   } else {
-    res = dir(2) < 0 ? TexVoxelDir::Z_MINUS : TexVoxelDir::Z_PLUS;
+    res = dir(2) < 0 ? TexVoxel::Dir::Z_MINUS : TexVoxel::Dir::Z_PLUS;
   }
   return res;
 }
@@ -458,7 +461,7 @@ __global__ void setTexVoxelDirections(
   const TexBlock* tex_block = tex_block_ptrs[blockIdx.x];
   TexVoxel tex_voxel = tex_block->voxels[threadIdx.z][threadIdx.y][threadIdx.x];
   // only update the direction of newly allocated voxels
-  if (tex_voxel.dir != TexVoxelDir::NONE) return;
+  if (tex_voxel.dir != TexVoxel::Dir::NONE) return;
 
   const TsdfBlock* tsdf_block = tsdf_block_ptrs[blockIdx.x];
   const TsdfVoxel tsdf_voxel =
@@ -469,8 +472,10 @@ __global__ void setTexVoxelDirections(
   // is just the normalized gradient.
   Vector3f gradient;
   const bool valid = computeTSDFGradient(tsdf_block, block_size, gradient);
-  if (valid) {
-    tex_voxel.dir = quantizeDirection(gradient.normalized());
+  const double gradient_norm = gradient.norm();
+  if (valid && gradient_norm > 0) {
+    tex_voxel.dir = quantizeDirection(gradient / gradient_norm);
+    printf("gradient: (%f %f %f), dir: %d\n", gradient[0], gradient[1], gradient[2], tex_voxel.dir);
   }
 
   // TODO: (rasaford) this is still quite hacky. Remove the Block abstraction
@@ -479,40 +484,40 @@ __global__ void setTexVoxelDirections(
   // Voxels on the edge of a block, determine the direction by majority voting
   // of the neighboring blocks. We sync all threads processing a block here,
   // such that all other direction values have already been written.
-  __syncthreads();
-  if (tex_voxel.dir == TexVoxelDir::NONE) {
-    const int3 voxel_idx = make_int3(threadIdx);
-    int frequencies[TexVoxelDir_count] = {};
-    // clang-format off
-    if(isValidBlockIndex<TsdfBlock>(voxel_idx.x + 1, voxel_idx.y, voxel_idx.z)) {
-      frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x + 1][voxel_idx.y][voxel_idx.z].dir)]++;
-    }
-    if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y + 1, voxel_idx.z)) {
-      frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y + 1][voxel_idx.z].dir)]++;
-    }
-    if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y, voxel_idx.z + 1)) {
-      frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y][voxel_idx.z + 1].dir)]++;
-    }
-    if(isValidBlockIndex<TsdfBlock>(voxel_idx.x - 1, voxel_idx.y, voxel_idx.z)) {
-      frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x - 1][voxel_idx.y][voxel_idx.z].dir)]++;
-    }
-    if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y - 1, voxel_idx.z)) {
-      frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y - 1][voxel_idx.z].dir)]++;
-    }
-    if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y, voxel_idx.z - 1)) {
-      frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y][voxel_idx.z - 1].dir)]++;
-    }
-    // clang-format on
-    int max_freq_idx = 0;
-    int max_freq = 0;
-    for (int i = 0; i < TexVoxelDir_count; ++i) {
-      if (frequencies[i] > max_freq) {
-        max_freq = frequencies[i];
-        max_freq_idx = i;
-      }
-    }
-    tex_voxel.dir = static_cast<TexVoxelDir>(max_freq_idx);
-  }
+  // __syncthreads();
+  // if (tex_voxel.dir == TexVoxelDir::NONE) {
+  //   const int3 voxel_idx = make_int3(threadIdx);
+  //   int frequencies[TexVoxelDir_count] = {};
+  //   // clang-format off
+  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x + 1, voxel_idx.y, voxel_idx.z)) {
+  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x + 1][voxel_idx.y][voxel_idx.z].dir)]++;
+  //   }
+  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y + 1, voxel_idx.z)) {
+  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y + 1][voxel_idx.z].dir)]++;
+  //   }
+  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y, voxel_idx.z + 1)) {
+  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y][voxel_idx.z + 1].dir)]++;
+  //   }
+  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x - 1, voxel_idx.y, voxel_idx.z)) {
+  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x - 1][voxel_idx.y][voxel_idx.z].dir)]++;
+  //   }
+  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y - 1, voxel_idx.z)) {
+  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y - 1][voxel_idx.z].dir)]++;
+  //   }
+  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y, voxel_idx.z - 1)) {
+  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y][voxel_idx.z - 1].dir)]++;
+  //   }
+  //   // clang-format on
+  //   int max_freq_idx = 0;
+  //   int max_freq = 0;
+  //   for (int i = 0; i < TexVoxelDir_count; ++i) {
+  //     if (frequencies[i] > max_freq) {
+  //       max_freq = frequencies[i];
+  //       max_freq_idx = i;
+  //     }
+  //   }
+  //   tex_voxel.dir = static_cast<TexVoxelDir>(max_freq_idx);
+  // }
 }
 
 void ProjectiveTexIntegrator::updateVoxelNormalDirections(

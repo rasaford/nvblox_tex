@@ -49,7 +49,7 @@ __device__ inline bool projectThreadVoxel(
 __device__ inline bool projectThreadTexel(
     const Index3D* block_indices_device_ptr, const Camera& camera,
     const Transform& T_C_L, const float block_size, const Index2D& texel_idx,
-    const TexVoxelDir dir, Vector2f* u_px_ptr, float* u_depth_ptr) {
+    const TexVoxel::Dir dir, Vector2f* u_px_ptr, float* u_depth_ptr) {
   const Index3D block_idx = block_indices_device_ptr[blockIdx.x];
   const Index3D voxel_idx(threadIdx.z, threadIdx.y, threadIdx.x);
 
@@ -69,7 +69,7 @@ __device__ inline bool projectThreadTexel(
   return true;
 }
 
-__global__ void checkBlocksInTruncationBand(
+__global__ inline void checkBlocksInTruncationBand(
     const VoxelBlock<TsdfVoxel>** block_device_ptrs,
     const float truncation_distance_m,
     bool* contains_truncation_band_device_ptr) {

@@ -105,7 +105,7 @@ Vector3f getCenterPositionForTexel(const float block_size,
                                    const Index3D& block_index,
                                    const Index3D& voxel_index,
                                    const Index2D& texel_index,
-                                   const TexVoxelDir dir) {
+                                   const TexVoxel::Dir dir) {
   const Vector3f voxel_center = getCenterPostionFromBlockIndexAndVoxelIndex(
       block_size, block_index, voxel_index);
   const float voxel_size = block_size / VoxelBlock<bool>::kVoxelsPerSide;
@@ -115,16 +115,16 @@ Vector3f getCenterPositionForTexel(const float block_size,
 
   // TODO: (rasaford) is fallthrough correct here?
   switch (dir) {
-    case TexVoxelDir::X_PLUS:
-    case TexVoxelDir::X_MINUS:
+    case TexVoxel::Dir::X_PLUS:
+    case TexVoxel::Dir::X_MINUS:
       pos << 0.0f, texel_coords(0), texel_coords(1);
       break;
-    case TexVoxelDir::Y_PLUS:
-    case TexVoxelDir::Y_MINUS:
+    case TexVoxel::Dir::Y_PLUS:
+    case TexVoxel::Dir::Y_MINUS:
       pos << texel_coords(0), 0.0f, texel_coords(1);
       break;
-    case TexVoxelDir::Z_PLUS:
-    case TexVoxelDir::Z_MINUS:
+    case TexVoxel::Dir::Z_PLUS:
+    case TexVoxel::Dir::Z_MINUS:
       pos << texel_coords(0), texel_coords(1), 0.0f;
       break;
     default:

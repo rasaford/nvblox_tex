@@ -101,7 +101,7 @@ class TestProjectiveTexIntegratorGPU : public ProjectiveTexIntegrator {
 ColorImage generateSolidColorImage(const Color& color, const int height,
                                    const int width) {
   // Generate a random color for this scene
-  ColorImage image(height, width);
+  ColorImage image(height, width, nvblox::MemoryType::kUnified);
   nvblox::test_utils::setImageConstantOnGpu(color, &image);
   return image;
 }
@@ -212,15 +212,21 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
   // Create an integrator.
   ProjectiveTexIntegrator tex_integrator;
 
+
   // Simulate a trajectory of the requisite amount of points, on the circle
   // around the sphere.
   constexpr float kTrajectoryRadius = 4.0f;
   constexpr float kTrajectoryHeight = 2.0f;
   constexpr int kNumTrajectoryPoints = 80;
   constexpr float radians_increment = 2 * M_PI / kNumTrajectoryPoints;
+  constexpr float kTruncationDistanceVox = 2;
+  constexpr float kTruncationDistanceMeters =
+      kTruncationDistanceVox * voxel_size_m_;
 
-  // Color layer
+  // Allocated layer in unified memory
   TexLayer tex_layer(voxel_size_m_, MemoryType::kUnified);
+
+
 
   // Generate a random color for this scene
   const Color target_color = Color::Red();

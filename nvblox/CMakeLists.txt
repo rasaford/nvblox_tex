@@ -6,7 +6,6 @@ project(nvblox VERSION 0.0.2 LANGUAGES CXX CUDA)
 # specify the C++ standard
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_BUILD_TYPE RelWithDebInfo)
 
 # This link flag replaces "runpath" with "rpath" in executables and shared objects.
 # This is important because it means the search paths are passed down the shared object tree.
@@ -66,6 +65,9 @@ include_directories(include)
 add_library(nvblox_cuda_check SHARED
     src/core/cuda/error_check.cu
 )
+if(CMAKE_BUILD_TYPE STREQUAL "Debug") 
+    target_compile_options(nvblox_cuda_check PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-G>)
+endif()
 
 add_library(nvblox_gpu_hash SHARED
     src/gpu_hash/cuda/gpu_layer_view.cu
@@ -83,6 +85,9 @@ target_link_libraries(nvblox_gpu_hash PUBLIC
     ${GLOG_LIBRARIES}
 )
 target_link_options(nvblox_gpu_hash PUBLIC ${nvblox_link_options})
+if(CMAKE_BUILD_TYPE STREQUAL "Debug") 
+    target_compile_options(nvblox_gpu_hash PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-G>)
+endif()
 
 add_library(nvblox_lib SHARED
     src/core/bounding_boxes.cpp
@@ -135,7 +140,6 @@ target_include_directories(nvblox_lib PUBLIC
     $<INSTALL_INTERFACE:include>
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
 )
-
 set_target_properties(nvblox_lib PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
     set_target_properties(nvblox_lib PROPERTIES CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES})
@@ -143,6 +147,9 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
 else()
     set_target_properties(nvblox_lib PROPERTIES CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS})
     set_target_properties(nvblox_lib PROPERTIES EXPORT_PROPERTIES CMAKE_CUDA_FLAGS)
+endif()
+if(CMAKE_BUILD_TYPE STREQUAL "Debug") 
+    target_compile_options(nvblox_lib PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-G>)
 endif()
 
 ############
