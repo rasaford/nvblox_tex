@@ -99,9 +99,9 @@ void ProjectiveTexIntegrator::integrateFrame(
   }
 }
 
-
 __device__ inline void updateTexel(const Color& color_measured,
-                                   TexVoxel* tex_voxel, Index2D& texel_idx,
+                                   TexVoxel* tex_voxel,
+                                   const Index2D& texel_idx,
                                    const float voxel_depth_m,
                                    const float truncation_distance_m,
                                    const float max_weight) {
@@ -185,6 +185,12 @@ __global__ void integrateBlocks(
   TexVoxel* voxel_ptr = &(block_device_ptrs[blockIdx.x]
                               ->voxels[threadIdx.z][threadIdx.y][threadIdx.x]);
 
+  // NOTE(rasaford): If the current voxel has not been assigned a texture plane
+  // direction, it must not be on the truncation band --> skip it
+  if (!voxel_ptr->isInitialized()) {
+    return;
+  }
+
   Color image_value;
   // loop over all colors in the TexVoxel patch
   for (int row = 0; row < voxel_ptr->kPatchWidth; ++row) {
@@ -197,17 +203,19 @@ __global__ void integrateBlocks(
                               &voxel_depth_m)) {
         continue;
       }
+      // printf("updating color for block (%d, %d, %d)", threadIdx.z,
+      // threadIdx.y,
+      //        threadIdx.x);
       // get image color at current u_px by linear interpolation
       if (!interpolation::interpolate2DLinear<Color>(
               color_image, u_px, color_rows, color_cols, &image_value)) {
         continue;
       }
+      // Update the texel using the update rule for this layer type
+      updateTexel(image_value, voxel_ptr, texel_idx, voxel_depth_m,
+                  truncation_distance_m, max_weight);
     }
   }
-
-  // Update the voxel using the update rule for this layer type
-  // updateVoxel(image_value, voxel_ptr, voxel_depth_m, truncation_distance_m,
-  //             max_weight);
 }
 
 void ProjectiveTexIntegrator::updateBlocks(
@@ -368,7 +376,8 @@ __device__ inline bool isValidBlockIndex(const int x, const int y,
  * @param x
  * @param y
  * @param z
- * @param distance output distance. Only written to if the return value == true
+ * @param distance output distance. Only written to if the return value ==
+ * true
  * @return if the voxel index is within the given block
  */
 __device__ inline bool getTsdfVoxelValue(const TsdfBlock* tsdf_block,
@@ -430,7 +439,7 @@ __device__ bool computeTSDFGradient(const TsdfBlock* tsdf_block,
  * @brief quantizes the given direction vector (normalized) into one of
  * TexVoxel::Dir directions
  *
- * @param normal **normalized** direcction vector
+ * @param normal **normalized** direction vector
  * @return quantized direction
  */
 __device__ inline TexVoxel::Dir quantizeDirection(const Vector3f& dir) {
@@ -447,8 +456,8 @@ __device__ inline TexVoxel::Dir quantizeDirection(const Vector3f& dir) {
 }
 
 /**
- * @brief Updates the direction values for all TexVoxels where this has not been
- * set yet
+ * @brief Updates the direction values for all TexVoxels where this has not
+ * been set yet
  *
  * @param tsdf_block_ptrs
  * @param tex_block_ptrs
@@ -456,12 +465,12 @@ __device__ inline TexVoxel::Dir quantizeDirection(const Vector3f& dir) {
  */
 __global__ void setTexVoxelDirections(
     const VoxelBlock<TsdfVoxel>** tsdf_block_ptrs,
-    const VoxelBlock<TexVoxel>** tex_block_ptrs, const float block_size) {
+    VoxelBlock<TexVoxel>** tex_block_ptrs, const float block_size) {
   // Get the Voxels we'll check in this thread
-  const TexBlock* tex_block = tex_block_ptrs[blockIdx.x];
-  TexVoxel tex_voxel = tex_block->voxels[threadIdx.z][threadIdx.y][threadIdx.x];
+  TexBlock* tex_block = tex_block_ptrs[blockIdx.x];
+  TexVoxel *tex_voxel = &(tex_block->voxels[threadIdx.z][threadIdx.y][threadIdx.x]);
   // only update the direction of newly allocated voxels
-  if (tex_voxel.dir != TexVoxel::Dir::NONE) return;
+  if (tex_voxel->isInitialized()) return;
 
   const TsdfBlock* tsdf_block = tsdf_block_ptrs[blockIdx.x];
   const TsdfVoxel tsdf_voxel =
@@ -474,8 +483,9 @@ __global__ void setTexVoxelDirections(
   const bool valid = computeTSDFGradient(tsdf_block, block_size, gradient);
   const double gradient_norm = gradient.norm();
   if (valid && gradient_norm > 0) {
-    tex_voxel.dir = quantizeDirection(gradient / gradient_norm);
-    printf("gradient: (%f %f %f), dir: %d\n", gradient[0], gradient[1], gradient[2], tex_voxel.dir);
+    tex_voxel->dir = quantizeDirection(gradient / gradient_norm);
+    // printf("gradient: (%f %f %f), dir: %d\n", gradient[0], gradient[1],
+    // gradient[2], tex_voxel.dir);
   }
 
   // TODO: (rasaford) this is still quite hacky. Remove the Block abstraction
@@ -489,23 +499,35 @@ __global__ void setTexVoxelDirections(
   //   const int3 voxel_idx = make_int3(threadIdx);
   //   int frequencies[TexVoxelDir_count] = {};
   //   // clang-format off
-  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x + 1, voxel_idx.y, voxel_idx.z)) {
-  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x + 1][voxel_idx.y][voxel_idx.z].dir)]++;
+  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x + 1, voxel_idx.y,
+  //   voxel_idx.z)) {
+  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x +
+  //     1][voxel_idx.y][voxel_idx.z].dir)]++;
   //   }
-  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y + 1, voxel_idx.z)) {
-  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y + 1][voxel_idx.z].dir)]++;
+  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y + 1,
+  //   voxel_idx.z)) {
+  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y
+  //     + 1][voxel_idx.z].dir)]++;
   //   }
-  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y, voxel_idx.z + 1)) {
-  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y][voxel_idx.z + 1].dir)]++;
+  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y, voxel_idx.z +
+  //   1)) {
+  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y][voxel_idx.z
+  //     + 1].dir)]++;
   //   }
-  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x - 1, voxel_idx.y, voxel_idx.z)) {
-  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x - 1][voxel_idx.y][voxel_idx.z].dir)]++;
+  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x - 1, voxel_idx.y,
+  //   voxel_idx.z)) {
+  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x -
+  //     1][voxel_idx.y][voxel_idx.z].dir)]++;
   //   }
-  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y - 1, voxel_idx.z)) {
-  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y - 1][voxel_idx.z].dir)]++;
+  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y - 1,
+  //   voxel_idx.z)) {
+  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y
+  //     - 1][voxel_idx.z].dir)]++;
   //   }
-  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y, voxel_idx.z - 1)) {
-  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y][voxel_idx.z - 1].dir)]++;
+  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y, voxel_idx.z -
+  //   1)) {
+  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y][voxel_idx.z
+  //     - 1].dir)]++;
   //   }
   //   // clang-format on
   //   int max_freq_idx = 0;
@@ -521,7 +543,7 @@ __global__ void setTexVoxelDirections(
 }
 
 void ProjectiveTexIntegrator::updateVoxelNormalDirections(
-    const TsdfLayer& tsdf_layer, const TexLayer* tex_layer_ptr,
+    const TsdfLayer& tsdf_layer, TexLayer* tex_layer_ptr,
     const std::vector<Index3D>& block_indices,
     const float truncation_distance_m) {
   const int num_blocks = block_indices.size();
@@ -533,8 +555,8 @@ void ProjectiveTexIntegrator::updateVoxelNormalDirections(
   // all new blocks
   std::vector<const TsdfBlock*> tsdf_block_ptrs =
       getBlockPtrsFromIndices(block_indices, tsdf_layer);
-  std::vector<const TexBlock*> tex_block_ptrs =
-      getBlockPtrsFromIndices(block_indices, *tex_layer_ptr);
+  std::vector<TexBlock*> tex_block_ptrs =
+      getBlockPtrsFromIndices(block_indices, tex_layer_ptr);
 
   // Expand the buffers when needed
   if (num_blocks > update_normals_tex_block_prts_device_.size()) {

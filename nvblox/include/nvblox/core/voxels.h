@@ -52,41 +52,38 @@ struct ColorVoxel {
 // Each TexVoxel is a 2d grid of colors for each voxel
 template <typename _ElementType, int _PatchWidth>
 struct TexVoxelTemplate {
-  // Six possible directors for each 2d texture plane to be facing in
-  // 3d space. The orientation of each plane will be determined at allocation
+  // Six possible directors for each 2D texture plane to be facing in
+  // 3D space. The orientation of each plane will be determined at allocation
   // time
-  enum class Dir {
-    X_PLUS,
-    X_MINUS,
-    Y_PLUS,
-    Y_MINUS,
-    Z_PLUS,
-    Z_MINUS,
-    NONE
-  };
+  enum class Dir { X_PLUS, X_MINUS, Y_PLUS, Y_MINUS, Z_PLUS, Z_MINUS, NONE };
   // number of elements in the enum has to always match
-  static constexpr int Dir_count= 7;
+  static constexpr int Dir_count = 7;
 
   // make the template params queryable as TexVoxelTemplate::ElementType etc.
   typedef _ElementType ElementType;
 
+  __host__ __device__ inline bool isInitialized() const { return dir != Dir::NONE; }
+
   // Access
-  inline ElementType operator()(const int row_idx, const int col_idx) const {
+  __host__ __device__ inline ElementType operator()(const int row_idx,
+                                                    const int col_idx) const {
     return colors[row_idx * kPatchWidth + col_idx];
   }
-  inline ElementType& operator()(const int row_idx, const int col_idx) {
+  __host__ __device__ inline ElementType& operator()(const int row_idx,
+                                                     const int col_idx) {
     return colors[row_idx * kPatchWidth + col_idx];
   }
-  inline ElementType operator()(const Index2D& idx) const {
+  __host__ __device__ inline ElementType operator()(const Index2D& idx) const {
     return colors[idx(0) * kPatchWidth + idx(1)];
   }
-  inline ElementType& operator()(const Index2D& idx) {
+  __host__ __device__ inline ElementType& operator()(const Index2D& idx) {
     return colors[idx(0) * kPatchWidth + idx(1)];
   }
-  inline ElementType operator()(const int linear_idx) const {
+  __host__ __device__ inline ElementType operator()(
+      const int linear_idx) const {
     return colors[linear_idx];
   }
-  inline ElementType& operator()(const int linear_idx) {
+  __host__ __device__ inline ElementType& operator()(const int linear_idx) {
     return colors[linear_idx];
   }
 

@@ -146,8 +146,8 @@ std::vector<Eigen::Vector3f> getPointsOnASphere(const float radius,
 //       getPointsOnASphere(radius, center);
 //   for (const Vector3f p : sphere_points) {
 //     const ColorVoxel* color_voxel;
-//     EXPECT_TRUE(getVoxelAtPosition<ColorVoxel>(color_layer, p, &color_voxel));
-//     check_color(*color_voxel, color);
+//     EXPECT_TRUE(getVoxelAtPosition<ColorVoxel>(color_layer, p,
+//     &color_voxel)); check_color(*color_voxel, color);
 //   }
 
 //   const float ratio_observed_points =
@@ -212,26 +212,19 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
   // Create an integrator.
   ProjectiveTexIntegrator tex_integrator;
 
-
   // Simulate a trajectory of the requisite amount of points, on the circle
   // around the sphere.
   constexpr float kTrajectoryRadius = 4.0f;
   constexpr float kTrajectoryHeight = 2.0f;
   constexpr int kNumTrajectoryPoints = 80;
   constexpr float radians_increment = 2 * M_PI / kNumTrajectoryPoints;
-  constexpr float kTruncationDistanceVox = 2;
-  constexpr float kTruncationDistanceMeters =
-      kTruncationDistanceVox * voxel_size_m_;
 
   // Allocated layer in unified memory
   TexLayer tex_layer(voxel_size_m_, MemoryType::kUnified);
 
-
-
   // Generate a random color for this scene
-  const Color target_color = Color::Red();
-  const ColorImage image =
-      generateSolidColorImage(target_color, height_, width_);
+  const Color color = Color::Red();
+  const ColorImage image = generateSolidColorImage(color, height_, width_);
 
   // Set keeping track of which blocks were touched during the test
   Index3DSet touched_blocks;
@@ -263,12 +256,14 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
 
   // Lambda that checks if voxels have the passed color (if they have weight >
   // 0)
-  auto color_check_lambda = [&target_color](const Index3D& voxel_idx,
-                                            const TexVoxel* voxel) -> void {
+  auto color_check_lambda = [&color](const Index3D& voxel_idx,
+                                     const TexVoxel* voxel) -> void {
     if (voxel->weight > 0.0f) {
       for (size_t col = 0; col < voxel->kPatchWidth; ++col) {
         for (size_t row = 0; row < voxel->kPatchWidth; ++row) {
-          EXPECT_EQ((*voxel)(row, col), target_color);
+          EXPECT_TRUE((*voxel)(row, col).r > 0);
+          EXPECT_EQ((*voxel)(row, col).g, color.g);
+          EXPECT_EQ((*voxel)(row, col).b, color.b);
         }
       }
     }
@@ -277,7 +272,7 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
   // Check that all touched blocks are the color we chose
   for (const Index3D& block_idx : touched_blocks) {
     callFunctionOnAllVoxels<TexVoxel>(*tex_layer.getBlockAtIndex(block_idx),
-                                        color_check_lambda);
+                                      color_check_lambda);
   }
 
   // Check that most points on the surface of the sphere have been observed
@@ -288,7 +283,7 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
   for (const Vector3f p : sphere_points) {
     const TexVoxel* tex_voxel;
     EXPECT_TRUE(getVoxelAtPosition<TexVoxel>(tex_layer, p, &tex_voxel));
-    if (tex_voxel->weight >= 1.0f) {
+    if (tex_voxel->weight > 0.0f) {
       ++num_points_on_sphere_surface_observed;
     }
   }
@@ -308,13 +303,14 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
     EXPECT_NE(gt_layer_.getBlockAtIndex(block_idx), nullptr);
   }
 
-  // TODO (rasaford) Meshing currently does not work with TexVoxels yet. 
+  // TODO (rasaford) Meshing currently does not work with TexVoxels yet.
   // Implement at least some approximation of full uv unwrapping ASAP
   // Generate a mesh from the "reconstruction"
   // MeshIntegrator mesh_integrator;
   // BlockLayer<MeshBlock> mesh_layer(block_size_m_, MemoryType::kDevice);
   // EXPECT_TRUE(
-  //     mesh_integrator.integrateMeshFromDistanceField(gt_layer_, &mesh_layer));
+  //     mesh_integrator.integrateMeshFromDistanceField(gt_layer_,
+  //     &mesh_layer));
   // mesh_integrator.colorMesh(tex_layer, &mesh_layer);
 
   // // Write to file

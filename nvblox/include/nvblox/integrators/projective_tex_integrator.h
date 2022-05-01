@@ -48,7 +48,7 @@ class ProjectiveTexIntegrator : public ProjectiveIntegratorBase {
       const float truncation_distance_m);
 
   void updateVoxelNormalDirections(const TsdfLayer& tsdf_layer,
-                                   const TexLayer* tex_layer_ptr,
+                                   TexLayer* tex_layer_ptr,
                                    const std::vector<Index3D>& block_indices,
                                    const float truncation_distance_m);
 
@@ -76,8 +76,8 @@ class ProjectiveTexIntegrator : public ProjectiveIntegratorBase {
   host_vector<bool> block_in_truncation_band_host_;
 
   // Buffers for storing voxel directions
-  device_vector<const TexBlock*> update_normals_tex_block_prts_device_;
-  host_vector<const TexBlock*> update_normals_tex_block_prts_host_;
+  device_vector<TexBlock*> update_normals_tex_block_prts_device_;
+  host_vector<TexBlock*> update_normals_tex_block_prts_host_;
   device_vector<const TsdfBlock*> update_normals_tsdf_block_prts_device_;
   host_vector<const TsdfBlock*> update_normals_tsdf_block_prts_host_;
 
