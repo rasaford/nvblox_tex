@@ -46,8 +46,44 @@ __host__ __device__ inline Vector3f getCenterPostionFromBlockIndexAndVoxelIndex(
     const float block_size, const Index3D& block_index,
     const Index3D& voxel_index);
 
+// Indexing functions for a VoxelLayer which does not have the concept of a
+// "block". Take care not to mix up these functions with the ones defined above.
+
 /**
- * @brief Transfroms the texel_index to 2D texel coordiantes
+ * @brief Get the Voxel Index from position in a **VoxelLayer**. This function
+ * does not work for BlockLayers
+ *
+ * @param voxel_size
+ * @param position
+ * @return Voxel index
+ */
+__host__ __device__ inline Index3D getVoxelIndexFromPositionInVoxelLayer(
+    const float voxel_size, const Vector3f& position);
+/**
+ * @brief Get the Position From a Voxel index in a **VoxelLayer** This function
+ * does not work for BlockLayers
+ *
+ * @param voxel_size
+ * @param voxel_index
+ * @return position of the smallest corner (i.e. the smallest towards negative
+ * infinity of each axis) of the Voxel
+ */
+__host__ __device__ inline Vector3f getPositionFromVoxelIndexInVoxelLayer(
+    const float voxel_size, const Index3D& voxel_index);
+
+/**
+ * @brief Get the Position From a Voxel index in a **VoxelLayer** This function
+ * does not work for BlockLayers
+ *
+ * @param voxel_size
+ * @param voxel_index
+ * @return position of the center of the Voxel
+ */
+__host__ __device__ inline Vector3f getCenterPositionFromVoxelIndexInVoxelLayer(
+    const float voxel_size, const Index3D& voxel_index);
+
+/**
+ * @brief Transfroms the texel_index to 2D texel coordinates
  *
  * @param texel_index
  * @param voxels_per_side

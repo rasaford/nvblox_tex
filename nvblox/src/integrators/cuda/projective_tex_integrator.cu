@@ -41,16 +41,15 @@ void ProjectiveTexIntegrator::integrateFrame(
     const TsdfLayer& tsdf_layer, TexLayer* tex_layer,
     std::vector<Index3D>* updated_blocks) {
   CHECK_NOTNULL(tex_layer);
-  CHECK_EQ(tsdf_layer.block_size(), tex_layer->block_size());
+  CHECK_EQ(tsdf_layer.voxel_size(), tex_layer->voxel_size());
 
   // Metric truncation distance for this layer
-  const float voxel_size =
-      tex_layer->block_size() / VoxelBlock<bool>::kVoxelsPerSide;
+  const float voxel_size =tex_layer->voxel_size();
   const float truncation_distance_m = truncation_distance_vox_ * voxel_size;
 
-  timing::Timer blocks_in_view_timer("tex/integrate/get_blocks_in_view");
-  std::vector<Index3D> block_indices =
-      getBlocksInView(T_L_C, camera, tex_layer->block_size());
+  timing::Timer blocks_in_view_timer("tex/integrate/get_voxels_in_view");
+  std::vector<Index3D> voxel_indices =
+      getVoxelsInView(T_L_C, camera, tex_layer->voxel_size());
   blocks_in_view_timer.Stop();
 
   // Check which of these blocks are:

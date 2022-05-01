@@ -173,8 +173,113 @@ class VoxelBlockLayer : public BlockLayer<VoxelBlock<VoxelType>> {
   const float voxel_size_;
 };
 
-namespace traits {
+template <typename _VoxelType>
+class VoxelLayer : public BaseLayer {
+ public:
+  typedef std::shared_ptr<VoxelLayer> Ptr;
+  typedef std::shared_prr<const VoxelLayer> ConstPtr;
 
+  // Check that custom block types implement allocate
+  static_assert(traits::has_allocate<_VoxelType>::value,
+                "VoxelType must implement allocate() function");
+
+  // allow for inspection of the VoxelType via LayerType::VoxelType
+  typedef _VoxelType VoxelType;
+  typedef VoxelLayer<VoxelType> LayerType;
+  typedef GPULayerView<VoxelType> GPULayerViewType;
+
+  typedef typename Index3DHashMapType<typename VoxelType::Ptr>::type VoxelHash;
+
+  /**
+   * @brief Constructor
+   *
+   * @param voxel_size Size of each voxel in meters
+   * @param memoryType Type of memory the voxels in this layer should be stored
+   * as
+   */
+  VoxelLayer(float voxel_size, MemoryTpe memoryType)
+      : memory_type_(memoryType), gpu_layer_view_up_to_date_(false) {}
+  VoxelLayer() = delete;
+
+  virtual ~VoxelLayer() {}
+
+  // (Deep) Copy disabled
+  // NOTE(alexmillane): We could write these if needed in the future
+  VoxelLayer(const LayerType& other) = delete;
+  VoxelLayer& operator=(const LayerType& other) = delete;
+
+  // Move operations
+  VoxelLayer(LayerType&& other) = default;
+  Voxellayer& operator=(LayerType&& other) = default;
+
+  // Block accessors by index.
+  typename VoxelType::Ptr getVoxelAtIndex(const Index3D& index);
+  typename VoxelType::ConstPtr getVoxelAtIndex(const Index3D& index) const;
+  typename VoxelType::Ptr allocateVoxelAtIndex(const Index3D& index);
+
+  // Block accessors by position.
+  typename VoxelType::Ptr getVoxelAtPosition(const Vector3f& position);
+  typename VoxelType::ConstPtr getVoxelAtPosition(
+      const Vector3f& position) const;
+  typename VoxelType::Ptr allocateVoxelAtPosition(const Vector3f& position);
+
+  // Get all voxel indices.
+  std::vector<Index3D> getAllVoxelIndices() const;
+
+  // Check if allocated
+  bool isVoxelAllocated(const Index3D& index) const;
+
+  __host__ __device__ float voxel_size() const { return voxel_size_; }
+  int numAllocatedVoxels() const { return voxels_.size(); }
+
+  // Clear the layer of all data
+  void clear() { voxels_.clear(); }
+
+  MemoryType memory_type() const { return memory_type_; }
+
+  // GPU Hash
+  // Note(alexmillane): The hash returned here is invalidated by calls to
+  // allocateBlock
+  GPULayerViewType getGpuLayerView() const;
+
+  
+  /// Gets voxels by copy from a list of positions.
+  /// The positions are given with respect to the layer frame (L). The function
+  /// returns the closest voxels to the passed points.
+  /// If memory_type_ == kDevice, the function retrieves voxel data from the GPU
+  /// and transfers it to the CPU. Modifications to the returned voxel data do
+  /// not affect the layer (they're copies).
+  /// Note that this function performs a Cudamemcpy per voxel. So it will likely
+  /// be relatively slow.
+  /// @param positions_L query positions in layer frame
+  /// @param voxels_ptr a pointer to a vector of voxels where we'll store the
+  ///                   output
+  /// @param success_flags_ptr a pointer to a vector of flags indicating if we
+  ///                          were able to retrive each voxel.
+  void getVoxels(const std::vector<Vector3f>& positions_L,
+                 std::vector<VoxelType>* voxels_ptr,
+                 std::vector<bool>* success_flags_ptr) const;
+
+ protected:
+  const float voxel_size_ const MemoryType memory_type_;
+
+  // CPU Hash (Index3D -> VoxelType::Ptr)
+  VoxelHash voxels_
+
+      /// GPU Hash
+      /// NOTE(alexmillane):
+      /// - This has is subservient to the CPU version. The layer has to copy
+      /// the
+      ///   hash to GPU when it is requested.
+      /// - Cached such that if no blocks are allocated between requests, the
+      ///   GPULayerView is not recopied.
+      /// - Lazily allocated (space allocated on the GPU first request)
+      /// - The "mutable" here is to enable caching in const member functions.
+      mutable bool gpu_layer_view_up_to_date_;
+  mutable std::unique_ptr<GPULayerViewType> gpu_layer_view_;
+};
+
+namespace traits {
 template <typename LayerType>
 struct is_voxel_layer : public std::false_type {};
 

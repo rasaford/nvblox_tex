@@ -52,6 +52,26 @@ class ProjectiveIntegratorBase {
   std::vector<Index3D> getBlocksInView(const Transform& T_L_C,
                                        const Camera& camera,
                                        float block_size) const;
+
+  /**
+   * @brief Get the voxels in view. 
+   * 
+   * @param depth_frame 
+   * @param T_L_C 
+   * @param camera 
+   * @param block_size 
+   * @return std::vector<Index3D> 
+   */
+  std::vector<Index3D> getVoxelsInView(const DepthImage& depth_frame,
+                                       const Transform& T_L_C,
+                                       const Camera& camera,
+                                       float voxel_size) const;
+  // Does not use the image, just uses the AABB.
+  std::vector<Index3D> getVoxelsInView(const Transform& T_L_C,
+                                       const Camera& camera,
+                                       float voxel_size) const;
+
+
   // Using the image and raycasting:
   std::vector<Index3D> getBlocksInViewUsingRaycasting(
       const DepthImage& depth_frame, const Transform& T_L_C,

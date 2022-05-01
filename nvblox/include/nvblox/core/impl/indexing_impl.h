@@ -92,6 +92,26 @@ Vector3f getCenterPostionFromBlockIndexAndVoxelIndex(
          Vector3f(half_voxel_size, half_voxel_size, half_voxel_size);
 }
 
+Index3D getVoxelIndexFromPositionInVoxelLayer(const float voxel_size,
+                                              const Vector3f& position) {
+  Index3D voxel_index = (position / voxel_size).array().floor().cast<int>();
+  // Check that the resulting index in valid
+  DCHECK((voxel_index.array() >= 0).all());
+  return voxel_index;
+}
+
+Vector3f getPositionFromVoxelIndexInVoxelLayer(const float voxel_size,
+                                               const Index3D& voxel_index) {
+  return Vector3f(voxel_size * voxel_index.cast<float>());
+}
+
+Vector3f getCenterPositionFromVoxelIndexInVoxelLayer(
+    const float voxel_size, const Index3D& voxel_index) {
+  const float half_voxel_size = voxel_size / 2.0f;
+  return getPositionFromVoxelIndexInVoxelLayer(voxel_size, voxel_index) +
+         Vector3f(half_voxel_size, half_voxel_size, half_voxel_size);
+}
+
 Vector2f getTexelCoordsfromIdx(const Index2D& texel_index,
                                const int texels_per_side,
                                const float voxel_size) {

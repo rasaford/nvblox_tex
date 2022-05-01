@@ -65,9 +65,9 @@ class ProjectiveTexIntegrator : public ProjectiveIntegratorBase {
   // NOTE(alexmillane): We have one pinned host and one device vector and
   // transfer between them.
   device_vector<Index3D> block_indices_device_;
-  device_vector<TexBlock*> block_ptrs_device_;
+  device_vector<TexVoxel*> block_ptrs_device_;
   host_vector<Index3D> block_indices_host_;
-  host_vector<TexBlock*> block_ptrs_host_;
+  host_vector<TexVoxel*> block_ptrs_host_;
 
   // Buffers for getting blocks in truncation band
   device_vector<const TsdfBlock*> truncation_band_block_ptrs_device_;
@@ -76,8 +76,8 @@ class ProjectiveTexIntegrator : public ProjectiveIntegratorBase {
   host_vector<bool> block_in_truncation_band_host_;
 
   // Buffers for storing voxel directions
-  device_vector<TexBlock*> update_normals_tex_block_prts_device_;
-  host_vector<TexBlock*> update_normals_tex_block_prts_host_;
+  device_vector<TexVoxel*> update_normals_tex_block_prts_device_;
+  host_vector<TexVoxel*> update_normals_tex_block_prts_host_;
   device_vector<const TsdfBlock*> update_normals_tsdf_block_prts_device_;
   host_vector<const TsdfBlock*> update_normals_tsdf_block_prts_host_;
 

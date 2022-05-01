@@ -159,6 +159,101 @@ void VoxelBlockLayer<VoxelType>::getVoxels(
   checkCudaErrors(cudaStreamDestroy(transfer_stream));
 }
 
+// VoxelLayer
+template <typename VoxelType>
+typename VoxelType::Ptr VoxelLayer<VoxelType>::getVoxelAtIndex(
+    const Index3D& index) {
+  // Look up the voxel in the hash. And return it.
+  auto it = voxels_.find(index);
+  if (it != voxels_.end()) {
+    return it->second;
+  } else {
+    return typename BlockType::Ptr();
+  }
+}
+
+template <typename VoxelType>
+typename VoxelType::ConstPtr VoxelLayer<VoxelType>::getVoxelAtIndex(
+    const Index3D& index) const {
+  const auto it = voxels_.find(index);
+  if (it != voxels_.end()) {
+    return (it->second);
+  } else {
+    return typename BlockType::ConstPtr();
+  }
+}
+
+template <typename VoxelType>
+typename VoxelType::Ptr VoxelLayer<VoxelType>::allocateVoxelAtIndex(
+    const Index3D& index) {
+  // NOTE(rasaford) check if the block at the given index was already allocated.
+  // If not do so.
+  auto it = voxels_.find(index);
+  if (it != voxels_.end()) {
+    return it->second;
+  } else {
+    // Invalidate the GPU hash
+    gpu_layer_view_up_to_date_ = false;
+    // Blocks define their own method for allocation.
+    auto insert_status =
+        voxels_.emplace(index, VoxelType::allocate(memory_type_));
+    return insert_status.first->second;
+  }
+}
+
+// Block accessors by position.
+template <typename VoxelType>
+typename VoxelType::Ptr VoxelLayer<VoxelType>::getVoxelAtPosition(
+    const Eigen::Vector3f& position) {
+  return getVoxelAtIndex(
+      getVoxelIndexFromPositionInVoxelLayer(voxel_size_, position));
+}
+
+template <typename VoxelType>
+typename VoxelType::ConstPtr VoxelLayer<VoxelType>::getVoxelAtPosition(
+    const Eigen::Vector3f& position) const {
+  return getVoxelAtIndex(
+      getVoxelIndexFromPositionInVoxelLayer(voxel_size_, position));
+}
+
+template <typename VoxelType>
+typename VoxelType::Ptr VoxelLayer<VoxelType>::allocateVoxelAtPosition(
+    const Eigen::Vector3f& position) {
+  return allocateVoxelAtIndex(
+      getVoxelIndexFromPositionInVoxelLayer(voxel_size_, position));
+}
+
+template <typename VoxelType>
+std::vector<Index3D> VoxelLayer<VoxelType>::getAllVoxelIndices() const {
+  std::vector<Index3D> indices;
+  indices.reserve(voxels_.size());
+
+  for (const auto& kv : voxels_) {
+    indices.push_back(kv.first);
+  }
+
+  return indices;
+}
+
+template <typename VoxelType>
+bool VoxelLayer<VoxelType>::isVoxelAllocated(const Index3D& index) const {
+  const auto it = blocks_.find(index);
+  return (it != blocks_.end());
+}
+
+template <typename VoxelType>
+typename VoxelLayer<VoxelType>::GPULayerViewType
+VoxelLayer<VoxelType>::getGpuLayerView() const {
+  if (!gpu_layer_view_) {
+    gpu_layer_view_ = std::make_unique<GPULayerViewType>();
+  }
+  if (!gpu_layer_view_up_to_date_) {
+    (*gpu_layer_view_).reset(const_cast<VoxelLayer<VoxelType>*>(this));
+    gpu_layer_view_up_to_date_ = true;
+  }
+  return *gpu_layer_view_;
+}
+
 namespace internal {
 
 template <typename is_voxel_layer>
