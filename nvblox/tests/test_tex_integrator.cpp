@@ -127,86 +127,89 @@ std::vector<Eigen::Vector3f> getPointsOnASphere(const float radius,
   return sphere_points;
 }
 
-// float checkSphereColor(const ColorLayer& color_layer, const Vector3f& center,
-//                        const float radius, const Color& color) {
-//   // Check that each sphere is colored appropriately (if observed)
-//   int num_observed = 0;
-//   int num_tested = 0;
-//   auto check_color = [&num_tested, &num_observed](
-//                          const ColorVoxel& voxel,
-//                          const Color& color_2) -> void {
-//     ++num_tested;
-//     if (voxel.weight >= 1.0f) {
-//       EXPECT_EQ(voxel.color, color_2);
-//       ++num_observed;
-//     }
-//   };
+float checkSphereColor(const TexLayer& tex_layer, const Vector3f& center,
+                       const float radius, const Color& color) {
+  // Check that each sphere is colored appropriately (if observed)
+  int num_observed = 0;
+  int num_tested = 0;
+  auto check_color = [&num_tested, &num_observed](
+                         const TexVoxel& voxel, const Color& color_2) -> void {
+    ++num_tested;
+    if (voxel.weight >= 1.0f) {
+      for (int i = 0; i < TexVoxel::kPatchWidth; ++i) {
+        for (int j = 0; j < TexVoxel::kPatchWidth; ++j) {
+          EXPECT_EQ(voxel(i, j), color_2);
+        }
+      }
+      ++num_observed;
+    }
+  };
 
-//   const std::vector<Eigen::Vector3f> sphere_points =
-//       getPointsOnASphere(radius, center);
-//   for (const Vector3f p : sphere_points) {
-//     const ColorVoxel* color_voxel;
-//     EXPECT_TRUE(getVoxelAtPosition<ColorVoxel>(color_layer, p,
-//     &color_voxel)); check_color(*color_voxel, color);
-//   }
+  const std::vector<Eigen::Vector3f> sphere_points =
+      getPointsOnASphere(radius, center);
+  for (const Vector3f p : sphere_points) {
+    const TexVoxel* color_voxel;
+    EXPECT_TRUE(getVoxelAtPosition<TexVoxel>(tex_layer, p, &color_voxel));
+    check_color(*color_voxel, color);
+  }
 
-//   const float ratio_observed_points =
-//       static_cast<float>(num_observed) / static_cast<float>(num_tested);
-//   return ratio_observed_points;
-// }
+  const float ratio_observed_points =
+      static_cast<float>(num_observed) / static_cast<float>(num_tested);
+  return ratio_observed_points;
+}
 
-// TEST_F(ColorIntegrationTest, TruncationBandTest) {
-//   // Check the GPU version against a hand-rolled CPU implementation.
-//   TestProjectiveColorIntegratorGPU integrator;
+TEST_F(TexIntegrationTest, TruncationBandTest) {
+  // Check the GPU version against a hand-rolled CPU implementation.
+  TestProjectiveTexIntegratorGPU integrator;
 
-//   // The distance from the surface that we "pass" blocks within.
-//   constexpr float kTestDistance = voxel_size_m_;
+  // The distance from the surface that we "pass" blocks within.
+  constexpr float kTestDistance = voxel_size_m_;
 
-//   std::vector<Index3D> all_indices = gt_layer_.getAllBlockIndices();
-//   std::vector<Index3D> valid_indices =
-//       integrator.reduceBlocksToThoseInTruncationBand(all_indices, gt_layer_,
-//                                                      kTestDistance);
-//   integrator.finish();
+  std::vector<Index3D> all_indices = gt_layer_.getAllBlockIndices();
+  std::vector<Index3D> valid_indices =
+      integrator.reduceBlocksToThoseInTruncationBand(all_indices, gt_layer_,
+                                                     kTestDistance);
+  integrator.finish();
 
-//   // Horrible N^2 complexity set_difference implementation. But easy to write
-//   :) std::vector<Index3D> not_valid_indices; for (const Index3D& idx :
-//   all_indices) {
-//     if (std::find(valid_indices.begin(), valid_indices.end(), idx) ==
-//         valid_indices.end()) {
-//       not_valid_indices.push_back(idx);
-//     }
-//   }
+  // Horrible N^2 complexity set_difference implementation. But easy to write
+  std::vector<Index3D> not_valid_indices;
+  for (const Index3D& idx : all_indices) {
+    if (std::find(valid_indices.begin(), valid_indices.end(), idx) ==
+        valid_indices.end()) {
+      not_valid_indices.push_back(idx);
+    }
+  }
 
-//   // Check indices touching band
-//   for (const Index3D& idx : valid_indices) {
-//     const auto block_ptr = gt_layer_.getBlockAtIndex(idx);
-//     bool touches_band = false;
-//     auto touches_band_lambda = [&touches_band, kTestDistance](
-//                                    const Index3D& voxel_index,
-//                                    const TsdfVoxel* voxel) -> void {
-//       if (std::abs(voxel->distance) <= kTestDistance) {
-//         touches_band = true;
-//       }
-//     };
-//     callFunctionOnAllVoxels<TsdfVoxel>(*block_ptr, touches_band_lambda);
-//     EXPECT_TRUE(touches_band);
-//   }
+  // Check indices touching band
+  for (const Index3D& idx : valid_indices) {
+    const auto block_ptr = gt_layer_.getBlockAtIndex(idx);
+    bool touches_band = false;
+    auto touches_band_lambda = [&touches_band, kTestDistance](
+                                   const Index3D& voxel_index,
+                                   const TsdfVoxel* voxel) -> void {
+      if (std::abs(voxel->distance) <= kTestDistance) {
+        touches_band = true;
+      }
+    };
+    callFunctionOnAllVoxels<TsdfVoxel>(*block_ptr, touches_band_lambda);
+    EXPECT_TRUE(touches_band);
+  }
 
-//   // Check indices NOT touching band
-//   for (const Index3D& idx : not_valid_indices) {
-//     const auto block_ptr = gt_layer_.getBlockAtIndex(idx);
-//     bool touches_band = false;
-//     auto touches_band_lambda = [&touches_band, kTestDistance](
-//                                    const Index3D& voxel_index,
-//                                    const TsdfVoxel* voxel) -> void {
-//       if (std::abs(voxel->distance) <= kTestDistance) {
-//         touches_band = true;
-//       }
-//     };
-//     callFunctionOnAllVoxels<TsdfVoxel>(*block_ptr, touches_band_lambda);
-//     EXPECT_FALSE(touches_band);
-//   }
-// }
+  // Check indices NOT touching band
+  for (const Index3D& idx : not_valid_indices) {
+    const auto block_ptr = gt_layer_.getBlockAtIndex(idx);
+    bool touches_band = false;
+    auto touches_band_lambda = [&touches_band, kTestDistance](
+                                   const Index3D& voxel_index,
+                                   const TsdfVoxel* voxel) -> void {
+      if (std::abs(voxel->distance) <= kTestDistance) {
+        touches_band = true;
+      }
+    };
+    callFunctionOnAllVoxels<TsdfVoxel>(*block_ptr, touches_band_lambda);
+    EXPECT_FALSE(touches_band);
+  }
+}
 
 TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
   // Create an integrator.
@@ -299,7 +302,7 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
   EXPECT_GT(ratio_observed_surface_points, 0.5);
 
   // Check that all color blocks have a corresponding block in the tsdf layer
-  for (const Index3D &block_idx : tex_layer.getAllBlockIndices()) {
+  for (const Index3D& block_idx : tex_layer.getAllBlockIndices()) {
     EXPECT_NE(gt_layer_.getBlockAtIndex(block_idx), nullptr);
   }
 
