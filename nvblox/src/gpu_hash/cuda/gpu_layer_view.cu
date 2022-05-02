@@ -30,5 +30,6 @@ template class GPULayerView<EsdfBlock>;
 template class GPULayerView<ColorBlock>;
 template class GPULayerView<TexBlock>;
 template class GPULayerView<MeshBlock>;
+template class GPULayerView<MeshBlockUV>;
 
 }  // namespace nvblox

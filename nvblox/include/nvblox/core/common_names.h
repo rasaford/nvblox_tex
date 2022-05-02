@@ -36,5 +36,6 @@ using ColorLayer = VoxelBlockLayer<ColorVoxel>;
 using TexBlock = VoxelBlock<TexVoxel>;
 using TexLayer = VoxelBlockLayer<TexVoxel>;
 using MeshLayer = BlockLayer<MeshBlock>;
+using MeshUVLayer = BlockLayer<MeshBlockUV>;
 
 }  // namespace nvblox

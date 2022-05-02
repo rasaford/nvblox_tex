@@ -22,11 +22,11 @@ namespace nvblox {
 // NOTE(rasaford) Explicit instantiation of all required template classes. If
 // another type T for Mesher<T> is used it needs to also be declard first here
 // and in the correspodning .cu file
-template class Mesher<CudaMeshBlock>;
-template class Mesher<CudaMeshBlockUV>;
+template class Mesher<CudaMeshBlock, MeshBlock>;
+template class Mesher<CudaMeshBlockUV, MeshBlockUV>;
 
-template <typename CudaMeshBlockType>
-Mesher<CudaMeshBlockType>::Mesher() {
+template <typename CudaMeshBlockType, typename MeshBlockType>
+Mesher<CudaMeshBlockType, MeshBlockType>::Mesher() {
   // clang-format off
     cube_index_offsets_ << 0, 1, 1, 0, 0, 1, 1, 0,
                            0, 0, 1, 1, 0, 0, 1, 1,
@@ -34,9 +34,9 @@ Mesher<CudaMeshBlockType>::Mesher() {
   // clang-format on
 }
 
-template <typename CudaMeshBlockType>
-bool Mesher<CudaMeshBlockType>::integrateMeshFromDistanceField(
-    const TsdfLayer& distance_layer, BlockLayer<MeshBlock>* mesh_layer,
+template <typename CudaMeshBlockType, typename MeshBlockType>
+bool Mesher<CudaMeshBlockType, MeshBlockType>::integrateMeshFromDistanceField(
+    const TsdfLayer& distance_layer, BlockLayer<MeshBlockType>* mesh_layer,
     const DeviceType device_type) {
   // First, get all the blocks.
   std::vector<Index3D> block_indices = distance_layer.getAllBlockIndices();
@@ -47,10 +47,10 @@ bool Mesher<CudaMeshBlockType>::integrateMeshFromDistanceField(
   }
 }
 
-template <typename CudaMeshBlockType>
-bool Mesher<CudaMeshBlockType>::integrateBlocksCPU(
+template <typename CudaMeshBlockType, typename MeshBlockType>
+bool Mesher<CudaMeshBlockType, MeshBlockType>::integrateBlocksCPU(
     const TsdfLayer& distance_layer, const std::vector<Index3D>& block_indices,
-    BlockLayer<MeshBlock>* mesh_layer) {
+    BlockLayer<MeshBlockType>* mesh_layer) {
   timing::Timer mesh_timer("mesh/integrate");
   CHECK_NOTNULL(mesh_layer);
   CHECK_NEAR(distance_layer.block_size(), mesh_layer->block_size(), 1e-4);
@@ -102,8 +102,8 @@ bool Mesher<CudaMeshBlockType>::integrateBlocksCPU(
   return true;
 }
 
-template <typename CudaMeshBlockType>
-bool Mesher<CudaMeshBlockType>::isBlockMeshable(
+template <typename CudaMeshBlockType, typename MeshBlockType>
+bool Mesher<CudaMeshBlockType, MeshBlockType>::isBlockMeshable(
     const VoxelBlock<TsdfVoxel>::ConstPtr block, float cutoff) const {
   constexpr int kVoxelsPerSide = VoxelBlock<TsdfVoxel>::kVoxelsPerSide;
 
@@ -130,8 +130,8 @@ bool Mesher<CudaMeshBlockType>::isBlockMeshable(
   return false;
 }
 
-template <typename CudaMeshBlockType>
-void Mesher<CudaMeshBlockType>::getTriangleCandidatesInBlock(
+template <typename CudaMeshBlockType, typename MeshBlockType>
+void Mesher<CudaMeshBlockType, MeshBlockType>::getTriangleCandidatesInBlock(
     const TsdfBlock::ConstPtr block,
     const std::vector<TsdfBlock::ConstPtr>& neighbor_blocks,
     const Index3D& block_index, const float block_size,
@@ -167,8 +167,8 @@ void Mesher<CudaMeshBlockType>::getTriangleCandidatesInBlock(
   }
 }
 
-template <typename CudaMeshBlockType>
-bool Mesher<CudaMeshBlockType>::getTriangleCandidatesAroundVoxel(
+template <typename CudaMeshBlockType, typename MeshBlockType>
+bool Mesher<CudaMeshBlockType, MeshBlockType>::getTriangleCandidatesAroundVoxel(
     const TsdfBlock::ConstPtr block,
     const std::vector<VoxelBlock<TsdfVoxel>::ConstPtr>& neighbor_blocks,
     const Index3D& voxel_index, const Vector3f& voxel_position,

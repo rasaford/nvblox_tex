@@ -143,6 +143,7 @@ __device__ void calculateOutputIndex(
       atomicAdd(size, num_vertices_in_voxel);
 }
 
+
 __device__ void calculateVertices(
     const PerVoxelMarchingCubesResults& marching_cubes_results,
     CudaMeshBlock* mesh) {

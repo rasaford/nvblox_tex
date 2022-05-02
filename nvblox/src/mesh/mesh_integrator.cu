@@ -35,20 +35,20 @@ namespace nvblox {
 // NOTE(rasaford) Explicit instantiation of all required template classes. If
 // another type T for Mesher<T> is used it needs to also be declard first here
 // and in the correspodning .cpp file
-template class Mesher<CudaMeshBlock>;
-template class Mesher<CudaMeshBlockUV>;
+template class Mesher<CudaMeshBlock, MeshBlock>;
+template class Mesher<CudaMeshBlockUV, MeshBlockUV>;
 
-template <typename CudaMeshBlockType>
-Mesher<CudaMeshBlockType>::~Mesher() {
+template <typename CudaMeshBlockType, typename MeshBlockType>
+Mesher<CudaMeshBlockType, MeshBlockType>::~Mesher() {
   if (cuda_stream_ != nullptr) {
     cudaStreamDestroy(cuda_stream_);
   }
 }
 
-template <typename CudaMeshBlockType>
-bool Mesher<CudaMeshBlockType>::integrateBlocksGPU(
+template <typename CudaMeshBlockType, typename MeshBlockType>
+bool Mesher<CudaMeshBlockType, MeshBlockType>::integrateBlocksGPU(
     const TsdfLayer& distance_layer, const std::vector<Index3D>& block_indices,
-    BlockLayer<MeshBlock>* mesh_layer) {
+    BlockLayer<MeshBlockType>* mesh_layer) {
   timing::Timer mesh_timer("mesh/gpu/integrate");
   CHECK_NOTNULL(mesh_layer);
   CHECK_NEAR(distance_layer.block_size(), mesh_layer->block_size(), 1e-4);
@@ -243,10 +243,11 @@ __global__ void meshBlocksCalculateTableIndicesKernel(
   }
 }
 
+template <typename CudaMeshBlockType>
 __global__ void meshBlocksCalculateVerticesKernel(
     int num_blocks,
     const marching_cubes::PerVoxelMarchingCubesResults* marching_cubes_results,
-    const int* mesh_block_sizes, CudaMeshBlock* mesh_blocks) {
+    const int* mesh_block_sizes, CudaMeshBlockType* mesh_blocks) {
   constexpr int kVoxelsPerSide = VoxelBlock<TsdfVoxel>::kVoxelsPerSide;
 
   const int linear_thread_idx =
@@ -278,8 +279,8 @@ __global__ void meshBlocksCalculateVerticesKernel(
 }
 
 // Wrappers
-template <typename CudaMeshBlockType>
-void Mesher<CudaMeshBlockType>::getMeshableBlocksGPU(
+template <typename CudaMeshBlockType, typename MeshBlockType>
+void Mesher<CudaMeshBlockType, MeshBlockType>::getMeshableBlocksGPU(
     const TsdfLayer& distance_layer, const std::vector<Index3D>& block_indices,
     float cutoff_distance, std::vector<Index3D>* meshable_blocks) {
   CHECK_NOTNULL(meshable_blocks);
@@ -324,10 +325,10 @@ void Mesher<CudaMeshBlockType>::getMeshableBlocksGPU(
   }
 }
 
-template <typename CudaMeshBlockType>
-void Mesher<CudaMeshBlockType>::meshBlocksGPU(
+template <typename CudaMeshBlockType, typename MeshBlockType>
+void Mesher<CudaMeshBlockType, MeshBlockType>::meshBlocksGPU(
     const TsdfLayer& distance_layer, const std::vector<Index3D>& block_indices,
-    BlockLayer<MeshBlock>* mesh_layer) {
+    BlockLayer<MeshBlockType>* mesh_layer) {
   if (block_indices.empty()) {
     return;
   }
@@ -405,8 +406,7 @@ void Mesher<CudaMeshBlockType>::meshBlocksGPU(
     const int num_vertices = mesh_block_sizes_host_[i];
 
     if (num_vertices > 0) {
-      MeshBlock::Ptr output_block =
-          mesh_layer->allocateBlockAtIndex(block_indices[i]);
+      auto output_block = mesh_layer->allocateBlockAtIndex(block_indices[i]);
 
       // Grow the vector with a growth factor and a minimum allocation to avoid
       // repeated reallocation
@@ -431,10 +431,11 @@ void Mesher<CudaMeshBlockType>::meshBlocksGPU(
   // - Translating the magic table indices into triangle vertices and writing
   //   them into the mesh layer.
   timing::Timer mesh_kernel_2_timer("mesh/gpu/mesh_blocks/kernel_vertices");
-  meshBlocksCalculateVerticesKernel<<<dim_block, dim_threads, 0,
-                                      cuda_stream_>>>(
+  // clang-format off
+  meshBlocksCalculateVerticesKernel<CudaMeshBlockType><<<dim_block, dim_threads, 0, cuda_stream_>>>(
       block_indices.size(), marching_cubes_results_device_.data(),
       mesh_block_sizes_device_.data(), mesh_blocks_device_.data());
+  // clang-format on
   checkCudaErrors(cudaPeekAtLastError());
   checkCudaErrors(cudaStreamSynchronize(cuda_stream_));
   mesh_kernel_2_timer.Stop();
@@ -446,10 +447,10 @@ void Mesher<CudaMeshBlockType>::meshBlocksGPU(
   }
 }
 
-template <typename CudaMeshBlockType>
-void Mesher<CudaMeshBlockType>::weldVertices(
+template <typename CudaMeshBlockType, typename MeshBlockType>
+void Mesher<CudaMeshBlockType, MeshBlockType>::weldVertices(
     const std::vector<Index3D>& block_indices,
-    BlockLayer<MeshBlock>* mesh_layer) {
+    BlockLayer<MeshBlockType>* mesh_layer) {
   for (const Index3D& index : block_indices) {
     MeshBlock::Ptr mesh_block = mesh_layer->getBlockAtIndex(index);
 

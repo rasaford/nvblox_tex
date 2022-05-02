@@ -27,25 +27,29 @@ namespace nvblox {
  * given Tsdf voxel grid. Specializations deal with adding color to the mesh.
  *
  */
-template <typename CudaMeshBlockType>
+template <typename CudaMeshBlockType_, typename MeshBlockType_>
 class Mesher {
  public:
-    Mesher();
-    ~Mesher();
+  // make template parameters accessible via :: operator
+  typedef CudaMeshBlockType_ CudaMeshBlockType;
+  typedef MeshBlockType_ MeshBlockType;
+
+  Mesher();
+  ~Mesher();
 
   /// Chooses the default mesher between CPU and GPU.
   bool integrateMeshFromDistanceField(
-      const TsdfLayer& distance_layer, BlockLayer<MeshBlock>* mesh_layer,
+      const TsdfLayer& distance_layer, BlockLayer<MeshBlockType>* mesh_layer,
       const DeviceType device_type = DeviceType::kGPU);
 
   /// Integrates only the selected blocks from the distance layer.
   bool integrateBlocksCPU(const TsdfLayer& distance_layer,
                           const std::vector<Index3D>& block_indices,
-                          BlockLayer<MeshBlock>* mesh_layer);
+                          BlockLayer<MeshBlockType>* mesh_layer);
 
   bool integrateBlocksGPU(const TsdfLayer& distance_layer,
                           const std::vector<Index3D>& block_indices,
-                          BlockLayer<MeshBlock>* mesh_layer);
+                          BlockLayer<MeshBlockType>* mesh_layer);
 
   // accessors for private class variables
   float min_weight() const { return min_weight_; }
@@ -79,10 +83,10 @@ class Mesher {
 
   void meshBlocksGPU(const TsdfLayer& distance_layer,
                      const std::vector<Index3D>& block_indices,
-                     BlockLayer<MeshBlock>* mesh_layer);
+                     BlockLayer<MeshBlockType>* mesh_layer);
 
   void weldVertices(const std::vector<Index3D>& block_indices,
-                    BlockLayer<MeshBlock>* mesh_layer);
+                    BlockLayer<MeshBlockType>* mesh_layer);
 
   // State.
   cudaStream_t cuda_stream_ = nullptr;
@@ -124,9 +128,8 @@ class Mesher {
  * are saved as vertex colors on the resulting mesh.
  *
  */
-class MeshIntegrator : public Mesher<CudaMeshBlock> {
+class MeshIntegrator : public Mesher<CudaMeshBlock, MeshBlock> {
  public:
-
   // Color mesh layer.
   // TODO(alexmillane): Currently these functions color vertices by taking the
   // CLOSEST color. Would be good to have an option at least for interpolation.
@@ -154,7 +157,7 @@ class MeshIntegrator : public Mesher<CudaMeshBlock> {
  * corrdinate in the resuling single texture.
 
  */
-class MeshUVIntegrator : public Mesher<CudaMeshBlockUV> {
+class MeshUVIntegrator : public Mesher<CudaMeshBlockUV, MeshBlockUV> {
  public:
   //   // automatically calls the base classes' construcor / destructor
 
