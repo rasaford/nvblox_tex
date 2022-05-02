@@ -19,7 +19,14 @@ limitations under the License.
 
 namespace nvblox {
 
-MeshIntegrator::MeshIntegrator() {
+// NOTE(rasaford) Explicit instantiation of all required template classes. If
+// another type T for Mesher<T> is used it needs to also be declard first here
+// and in the correspodning .cu file
+template class Mesher<CudaMeshBlock>;
+template class Mesher<CudaMeshBlockUV>;
+
+template <typename CudaMeshBlockType>
+Mesher<CudaMeshBlockType>::Mesher() {
   // clang-format off
     cube_index_offsets_ << 0, 1, 1, 0, 0, 1, 1, 0,
                            0, 0, 1, 1, 0, 0, 1, 1,
@@ -27,7 +34,8 @@ MeshIntegrator::MeshIntegrator() {
   // clang-format on
 }
 
-bool MeshIntegrator::integrateMeshFromDistanceField(
+template <typename CudaMeshBlockType>
+bool Mesher<CudaMeshBlockType>::integrateMeshFromDistanceField(
     const TsdfLayer& distance_layer, BlockLayer<MeshBlock>* mesh_layer,
     const DeviceType device_type) {
   // First, get all the blocks.
@@ -39,7 +47,8 @@ bool MeshIntegrator::integrateMeshFromDistanceField(
   }
 }
 
-bool MeshIntegrator::integrateBlocksCPU(
+template <typename CudaMeshBlockType>
+bool Mesher<CudaMeshBlockType>::integrateBlocksCPU(
     const TsdfLayer& distance_layer, const std::vector<Index3D>& block_indices,
     BlockLayer<MeshBlock>* mesh_layer) {
   timing::Timer mesh_timer("mesh/integrate");
@@ -93,7 +102,8 @@ bool MeshIntegrator::integrateBlocksCPU(
   return true;
 }
 
-bool MeshIntegrator::isBlockMeshable(
+template <typename CudaMeshBlockType>
+bool Mesher<CudaMeshBlockType>::isBlockMeshable(
     const VoxelBlock<TsdfVoxel>::ConstPtr block, float cutoff) const {
   constexpr int kVoxelsPerSide = VoxelBlock<TsdfVoxel>::kVoxelsPerSide;
 
@@ -120,7 +130,8 @@ bool MeshIntegrator::isBlockMeshable(
   return false;
 }
 
-void MeshIntegrator::getTriangleCandidatesInBlock(
+template <typename CudaMeshBlockType>
+void Mesher<CudaMeshBlockType>::getTriangleCandidatesInBlock(
     const TsdfBlock::ConstPtr block,
     const std::vector<TsdfBlock::ConstPtr>& neighbor_blocks,
     const Index3D& block_index, const float block_size,
@@ -156,7 +167,8 @@ void MeshIntegrator::getTriangleCandidatesInBlock(
   }
 }
 
-bool MeshIntegrator::getTriangleCandidatesAroundVoxel(
+template <typename CudaMeshBlockType>
+bool Mesher<CudaMeshBlockType>::getTriangleCandidatesAroundVoxel(
     const TsdfBlock::ConstPtr block,
     const std::vector<VoxelBlock<TsdfVoxel>::ConstPtr>& neighbor_blocks,
     const Index3D& voxel_index, const Vector3f& voxel_position,

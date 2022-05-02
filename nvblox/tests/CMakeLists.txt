@@ -84,7 +84,7 @@ target_link_libraries(test_esdf_integrator nvblox_test_utils)
 gtest_discover_tests(test_esdf_integrator ${TEST_OPTIONS})
 
 add_executable(test_color_image test_color_image.cpp)
-target_link_libraries(test_color_image nvblox_test_utils)
+target_link_libraries(test_color_image nvblox_test_utils nvblox_lib)
 gtest_discover_tests(test_color_image ${TEST_OPTIONS})
 
 add_executable(test_color_integrator test_color_integrator.cpp)

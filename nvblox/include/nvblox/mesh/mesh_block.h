@@ -69,6 +69,27 @@ struct MeshBlock {
   static Ptr allocate(MemoryType memory_type);
 };
 
+struct MeshBlockUV : MeshBlock {
+  typedef std::shared_ptr<MeshBlockUV> Ptr;
+  typedef std::shared_ptr<const MeshBlockUV> ConstPtr;
+
+  MeshBlockUV(MemoryType memory_type = MemoryType::kDevice);
+
+  // Mesh Data
+  // the uv vector hols a 2D vector for each vertex with is uv (texture)
+  // coordianates
+  unified_vector<Vector2f> uvs;
+
+  void clear();
+
+  void expandUVsToMatchVertices();
+
+  // Copy mesh data to the CPU.
+  std::vector<Vector2f> getUVvectorOnCPU() const;
+
+  static Ptr allocate(MemoryType memory_type);
+};
+
 // Helper struct for mesh blocks on CUDA.
 // NOTE: We need this because we cant pass MeshBlock to kernel functions because
 // of the presence of unified_vector members.
@@ -81,6 +102,14 @@ struct CudaMeshBlock {
   int* triangles;
   Color* colors;
   int size;
+};
+
+// Helper struct for uv mesh blocks on CUDA.
+struct CudaMeshBlockUV : CudaMeshBlock {
+  CudaMeshBlockUV() = default;
+  CudaMeshBlockUV(MeshBlockUV* block);
+
+  Vector2f* uvs;
 };
 
 }  // namespace nvblox

@@ -32,13 +32,21 @@ limitations under the License.
 
 namespace nvblox {
 
-MeshIntegrator::~MeshIntegrator() {
+// NOTE(rasaford) Explicit instantiation of all required template classes. If
+// another type T for Mesher<T> is used it needs to also be declard first here
+// and in the correspodning .cpp file
+template class Mesher<CudaMeshBlock>;
+template class Mesher<CudaMeshBlockUV>;
+
+template <typename CudaMeshBlockType>
+Mesher<CudaMeshBlockType>::~Mesher() {
   if (cuda_stream_ != nullptr) {
     cudaStreamDestroy(cuda_stream_);
   }
 }
 
-bool MeshIntegrator::integrateBlocksGPU(
+template <typename CudaMeshBlockType>
+bool Mesher<CudaMeshBlockType>::integrateBlocksGPU(
     const TsdfLayer& distance_layer, const std::vector<Index3D>& block_indices,
     BlockLayer<MeshBlock>* mesh_layer) {
   timing::Timer mesh_timer("mesh/gpu/integrate");
@@ -270,8 +278,8 @@ __global__ void meshBlocksCalculateVerticesKernel(
 }
 
 // Wrappers
-
-void MeshIntegrator::getMeshableBlocksGPU(
+template <typename CudaMeshBlockType>
+void Mesher<CudaMeshBlockType>::getMeshableBlocksGPU(
     const TsdfLayer& distance_layer, const std::vector<Index3D>& block_indices,
     float cutoff_distance, std::vector<Index3D>* meshable_blocks) {
   CHECK_NOTNULL(meshable_blocks);
@@ -316,9 +324,10 @@ void MeshIntegrator::getMeshableBlocksGPU(
   }
 }
 
-void MeshIntegrator::meshBlocksGPU(const TsdfLayer& distance_layer,
-                                   const std::vector<Index3D>& block_indices,
-                                   BlockLayer<MeshBlock>* mesh_layer) {
+template <typename CudaMeshBlockType>
+void Mesher<CudaMeshBlockType>::meshBlocksGPU(
+    const TsdfLayer& distance_layer, const std::vector<Index3D>& block_indices,
+    BlockLayer<MeshBlock>* mesh_layer) {
   if (block_indices.empty()) {
     return;
   }
@@ -412,7 +421,7 @@ void MeshIntegrator::meshBlocksGPU(const TsdfLayer& distance_layer,
         output_block->reserveNumberOfVertices(num_vertices_to_allocate);
       }
       output_block->resizeToNumberOfVertices(num_vertices);
-      mesh_blocks_host_[i] = CudaMeshBlock(output_block.get());
+      mesh_blocks_host_[i] = CudaMeshBlockType(output_block.get());
     }
   }
   mesh_blocks_device_ = mesh_blocks_host_;
@@ -437,8 +446,10 @@ void MeshIntegrator::meshBlocksGPU(const TsdfLayer& distance_layer,
   }
 }
 
-void MeshIntegrator::weldVertices(const std::vector<Index3D>& block_indices,
-                                  BlockLayer<MeshBlock>* mesh_layer) {
+template <typename CudaMeshBlockType>
+void Mesher<CudaMeshBlockType>::weldVertices(
+    const std::vector<Index3D>& block_indices,
+    BlockLayer<MeshBlock>* mesh_layer) {
   for (const Index3D& index : block_indices) {
     MeshBlock::Ptr mesh_block = mesh_layer->getBlockAtIndex(index);
 

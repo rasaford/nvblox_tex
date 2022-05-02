@@ -76,6 +76,27 @@ void MeshBlock::expandIntensitiesToMatchVertices() {
   intensities.resize(vertices.size());
 }
 
+MeshBlockUV::MeshBlockUV(MemoryType memory_type)
+    : MeshBlock(memory_type), uvs(memory_type) {}
+
+void MeshBlockUV::clear() {
+  MeshBlock::clear();
+  uvs.clear();
+}
+
+void MeshBlockUV::expandUVsToMatchVertices() {
+  uvs.reserve(vertices.capacity());
+  uvs.resize(vertices.size());
+}
+
+std::vector<Vector2f> MeshBlockUV::getUVvectorOnCPU() const {
+  return uvs.toVector();
+}
+
+MeshBlockUV::Ptr MeshBlockUV::allocate(MemoryType memory_type) {
+  return std::make_shared<MeshBlockUV>(memory_type);
+}
+
 // Set the pointers to point to the mesh block.
 CudaMeshBlock::CudaMeshBlock(MeshBlock* block) {
   CHECK_NOTNULL(block);
@@ -85,6 +106,10 @@ CudaMeshBlock::CudaMeshBlock(MeshBlock* block) {
   colors = block->colors.data();
 
   size = block->vertices.size();
+}
+
+CudaMeshBlockUV::CudaMeshBlockUV(MeshBlockUV* block) : CudaMeshBlock(block) {
+  uvs = block->uvs.data();
 }
 
 }  // namespace nvblox

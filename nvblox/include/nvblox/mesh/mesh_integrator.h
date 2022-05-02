@@ -22,10 +22,16 @@ limitations under the License.
 
 namespace nvblox {
 
-class MeshIntegrator {
+/**
+ * @brief This class contains all functionality to construct a Mesh from the a
+ * given Tsdf voxel grid. Specializations deal with adding color to the mesh.
+ *
+ */
+template <typename CudaMeshBlockType>
+class Mesher {
  public:
-  MeshIntegrator();
-  ~MeshIntegrator();
+    Mesher();
+    ~Mesher();
 
   /// Chooses the default mesher between CPU and GPU.
   bool integrateMeshFromDistanceField(
@@ -41,29 +47,14 @@ class MeshIntegrator {
                           const std::vector<Index3D>& block_indices,
                           BlockLayer<MeshBlock>* mesh_layer);
 
-  // Color mesh layer.
-  // TODO(alexmillane): Currently these functions color vertices by taking the
-  // CLOSEST color. Would be good to have an option at least for interpolation.
-  void colorMesh(const ColorLayer& color_layer, MeshLayer* mesh_layer);
-  void colorMesh(const ColorLayer& color_layer,
-                 const std::vector<Index3D>& block_indices,
-                 MeshLayer* mesh_layer);
-  void colorMeshGPU(const ColorLayer& color_layer, MeshLayer* mesh_layer);
-  void colorMeshGPU(const ColorLayer& color_layer,
-                    const std::vector<Index3D>& block_indices,
-                    MeshLayer* mesh_layer);
-  void colorMeshCPU(const ColorLayer& color_layer, MeshLayer* mesh_layer);
-  void colorMeshCPU(const ColorLayer& color_layer,
-                    const std::vector<Index3D>& block_indices,
-                    MeshLayer* mesh_layer);
-
+  // accessors for private class variables
   float min_weight() const { return min_weight_; }
   float& min_weight() { return min_weight_; }
 
   bool weld_vertices() const { return weld_vertices_; }
   bool& weld_vertices() { return weld_vertices_; }
 
- private:
+ protected:
   bool isBlockMeshable(const VoxelBlock<TsdfVoxel>::ConstPtr block,
                        float cutoff) const;
 
@@ -93,6 +84,12 @@ class MeshIntegrator {
   void weldVertices(const std::vector<Index3D>& block_indices,
                     BlockLayer<MeshBlock>* mesh_layer);
 
+  // State.
+  cudaStream_t cuda_stream_ = nullptr;
+
+  // Offsets for cube indices.
+  Eigen::Matrix<int, 3, 8> cube_index_offsets_;
+
   // Minimum weight to actually mesh.
   float min_weight_ = 1e-4;
 
@@ -100,14 +97,11 @@ class MeshIntegrator {
   /// of vertices by 5x.
   bool weld_vertices_ = false;
 
-  // Offsets for cube indices.
-  Eigen::Matrix<int, 3, 8> cube_index_offsets_;
-
-  // The color that the mesh takes if no coloring is available.
-  Color default_mesh_color_ = Color::Gray();
-
-  // State.
-  cudaStream_t cuda_stream_ = nullptr;
+  // Intermediate marching cube results.
+  device_vector<marching_cubes::PerVoxelMarchingCubesResults>
+      marching_cubes_results_device_;
+  device_vector<int> mesh_block_sizes_device_;
+  host_vector<int> mesh_block_sizes_host_;
 
   // These are temporary variables so we don't have to allocate every single
   // frame.
@@ -117,17 +111,54 @@ class MeshIntegrator {
   device_vector<bool> meshable_device_;
   host_vector<Vector3f> block_positions_host_;
   device_vector<Vector3f> block_positions_device_;
-  host_vector<CudaMeshBlock> mesh_blocks_host_;
-  device_vector<CudaMeshBlock> mesh_blocks_device_;
+  host_vector<CudaMeshBlockType> mesh_blocks_host_;
+  device_vector<CudaMeshBlockType> mesh_blocks_device_;
+
   // Caches for welding.
   device_vector<Vector3f> input_vertices_;
   device_vector<Vector3f> input_normals_;
+};
 
-  // Intermediate marching cube results.
-  device_vector<marching_cubes::PerVoxelMarchingCubesResults>
-      marching_cubes_results_device_;
-  device_vector<int> mesh_block_sizes_device_;
-  host_vector<int> mesh_block_sizes_host_;
+/**
+ * @brief MeshIntegrator for a ColorLayer, defining one color per voxel. Colors
+ * are saved as vertex colors on the resulting mesh.
+ *
+ */
+class MeshIntegrator : public Mesher<CudaMeshBlock> {
+ public:
+
+  // Color mesh layer.
+  // TODO(alexmillane): Currently these functions color vertices by taking the
+  // CLOSEST color. Would be good to have an option at least for interpolation.
+  void colorMesh(const ColorLayer& color_layer, MeshLayer* mesh_layer);
+  void colorMesh(const ColorLayer& color_layer,
+                 const std::vector<Index3D>& block_indices,
+                 MeshLayer* mesh_layer);
+  void colorMeshGPU(const ColorLayer& color_layer, MeshLayer* mesh_layer);
+  void colorMeshGPU(const ColorLayer& color_layer,
+                    const std::vector<Index3D>& block_indices,
+                    MeshLayer* mesh_layer);
+  void colorMeshCPU(const ColorLayer& color_layer, MeshLayer* mesh_layer);
+  void colorMeshCPU(const ColorLayer& color_layer,
+                    const std::vector<Index3D>& block_indices,
+                    MeshLayer* mesh_layer);
+
+ protected:
+  // The color that the mesh takes if no coloring is available.
+  Color default_mesh_color_ = Color::Gray();
+};
+
+/**
+ * @brief MeshUVIntegrator for a TexLayer. Since each voxel defines a 2D grid of
+ * texture values, each vertex in the resulting mesh is assigned a uv texture
+ * corrdinate in the resuling single texture.
+
+ */
+class MeshUVIntegrator : public Mesher<CudaMeshBlockUV> {
+ public:
+  //   // automatically calls the base classes' construcor / destructor
+
+ protected:
 };
 
 }  // namespace nvblox
