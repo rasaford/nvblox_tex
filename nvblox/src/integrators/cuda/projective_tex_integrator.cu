@@ -13,12 +13,11 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-#include <helper_math.h>
-#include "nvblox/integrators/projective_tex_integrator.h"
-
 #include "nvblox/integrators/cuda/projective_integrators_common.cuh"
 #include "nvblox/integrators/integrators_common.h"
+#include "nvblox/integrators/projective_tex_integrator.h"
 #include "nvblox/utils/timing.h"
+
 namespace nvblox {
 
 ProjectiveTexIntegrator::ProjectiveTexIntegrator()
@@ -352,240 +351,52 @@ ProjectiveTexIntegrator::reduceBlocksToThoseInTruncationBand(
   return block_indices_check_2;
 }
 
-template <typename BlockType>
-__device__ inline bool isValidBlockIndex(const int x, const int y,
-                                         const int z) {
-  // Check if the given voxel index is within the current block
-  if (x < 0 || x >= BlockType::kVoxelsPerSide) {
-    return false;
-  }
-  if (y < 0 || y >= BlockType::kVoxelsPerSide) {
-    return false;
-  }
-  if (z < 0 || z >= BlockType::kVoxelsPerSide) {
-    return false;
-  }
-  return true;
-}
-
-/**
- * @brief Get the TSDF value at the current voxel, if the given voxel index is
- * still within the given block
- *
- * @param tsdf_block
- * @param x
- * @param y
- * @param z
- * @param distance output distance. Only written to if the return value ==
- * true
- * @return if the voxel index is within the given block
- */
-__device__ inline bool getTsdfVoxelValue(const TsdfBlock* tsdf_block,
-                                         const int x, const int y, const int z,
-                                         float& distance) {
-  if (!isValidBlockIndex<TsdfBlock>(x, y, z)) return;
-
-  const TsdfVoxel& voxel = tsdf_block->voxels[x][y][z];
-
-  // if the voxel is outside the truncation band, the weight will be 0
-  if (voxel.weight > 0.0f) {
-    distance = voxel.distance;
-    return true;
-  }
-  return false;
-}
-
-/**
- * @brief Computes TSDF gradient for the current vertex given by threadIdx.
- * If a vertex does not have 6 neighbors, the gradient will be (0, 0, 0).
- *
- * @param tsdf_block
- * @param block_size
- * @param gradient
- */
-__device__ bool computeTSDFGradient(const TsdfBlock* tsdf_block,
-                                    const float block_size,
-                                    Vector3f& gradient) {
-  // voxel size is block size divided by number of blocks per side
-  const float voxel_size =
-      block_size / static_cast<float>(tsdf_block->kVoxelsPerSide);
-  const float voxel_size_2x = 2 * voxel_size;
-  // the voxel index is the current threadIndex
-  const int3 voxel_idx = make_int3(threadIdx);
-  float dist_x_plus = 0, dist_x_minus = 0, dist_y_plus = 0, dist_y_minus = 0,
-        dist_z_plus = 0, dist_z_minus = 0;
-  bool valid = true;
-  // get tsdf values for each neighboring voxel to the current one within the
-  // given block
-  // clang-format off
-  valid &= getTsdfVoxelValue(tsdf_block, voxel_idx.x + 1, voxel_idx.y,      voxel_idx.z,      dist_x_plus);
-  valid &= getTsdfVoxelValue(tsdf_block, voxel_idx.x,     voxel_idx.y + 1,  voxel_idx.z,      dist_y_plus);
-  valid &= getTsdfVoxelValue(tsdf_block, voxel_idx.x,     voxel_idx.y,      voxel_idx.z + 1,  dist_z_plus);
-  valid &= getTsdfVoxelValue(tsdf_block, voxel_idx.x - 1, voxel_idx.y,      voxel_idx.z,      dist_x_minus);
-  valid &= getTsdfVoxelValue(tsdf_block, voxel_idx.x,     voxel_idx.y - 1,  voxel_idx.z,      dist_y_minus);
-  valid &= getTsdfVoxelValue(tsdf_block, voxel_idx.x,     voxel_idx.y,      voxel_idx.z - 1,  dist_z_minus);
-  // clang-format on
-  if (!valid) {
-    return false;
-  }
-  // approximate gradient by finite differences
-  gradient << (dist_x_plus - dist_x_minus) / voxel_size_2x,
-      (dist_y_plus - dist_y_minus) / voxel_size_2x,
-      (dist_z_plus - dist_z_minus) / voxel_size_2x;
-  return true;
-}
-
-/**
- * @brief quantizes the given direction vector (normalized) into one of
- * TexVoxel::Dir directions
- *
- * @param normal **normalized** direction vector
- * @return quantized direction
- */
-__device__ inline TexVoxel::Dir quantizeDirection(const Vector3f& dir) {
-  const Vector3f abs_dir = dir.cwiseAbs();
-  TexVoxel::Dir res;
-  if (abs_dir(0) >= abs_dir(1) && abs_dir(0) >= abs_dir(2)) {
-    res = dir(0) < 0 ? TexVoxel::Dir::X_MINUS : res = TexVoxel::Dir::X_PLUS;
-  } else if (abs_dir(1) >= abs_dir(2)) {
-    res = dir(1) < 0 ? TexVoxel::Dir::Y_MINUS : TexVoxel::Dir::Y_PLUS;
-  } else {
-    res = dir(2) < 0 ? TexVoxel::Dir::Z_MINUS : TexVoxel::Dir::Z_PLUS;
-  }
-  return res;
-}
-
-/**
- * @brief Updates the direction values for all TexVoxels where this has not
- * been set yet
- *
- * @param tsdf_block_ptrs
- * @param tex_block_ptrs
- * @param block_size
- */
-__global__ void setTexVoxelDirections(
-    const VoxelBlock<TsdfVoxel>** tsdf_block_ptrs,
-    VoxelBlock<TexVoxel>** tex_block_ptrs, const float block_size) {
-  // Get the Voxels we'll check in this thread
-  TexBlock* tex_block = tex_block_ptrs[blockIdx.x];
-  TexVoxel *tex_voxel = &(tex_block->voxels[threadIdx.z][threadIdx.y][threadIdx.x]);
-  // only update the direction of newly allocated voxels
-  if (tex_voxel->isInitialized()) return;
-
-  const TsdfBlock* tsdf_block = tsdf_block_ptrs[blockIdx.x];
-  const TsdfVoxel tsdf_voxel =
-      tsdf_block->voxels[threadIdx.z][threadIdx.y][threadIdx.x];
-
-  // Since we are working in an TSDF, where the distance of each voxel to the
-  // surface implicitly defines the surface boundary, the normal of each voxel
-  // is just the normalized gradient.
-  Vector3f gradient;
-  const bool valid = computeTSDFGradient(tsdf_block, block_size, gradient);
-  const double gradient_norm = gradient.norm();
-  if (valid && gradient_norm > 0) {
-    tex_voxel->dir = quantizeDirection(gradient / gradient_norm);
-    // printf("gradient: (%f %f %f), dir: %d\n", gradient[0], gradient[1],
-    // gradient[2], tex_voxel.dir);
-  }
-
-  // TODO: (rasaford) this is still quite hacky. Remove the Block abstraction
-  // for TexVoxels to limit the number of voxels we have to do this for for
-
-  // Voxels on the edge of a block, determine the direction by majority voting
-  // of the neighboring blocks. We sync all threads processing a block here,
-  // such that all other direction values have already been written.
-  // __syncthreads();
-  // if (tex_voxel.dir == TexVoxelDir::NONE) {
-  //   const int3 voxel_idx = make_int3(threadIdx);
-  //   int frequencies[TexVoxelDir_count] = {};
-  //   // clang-format off
-  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x + 1, voxel_idx.y,
-  //   voxel_idx.z)) {
-  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x +
-  //     1][voxel_idx.y][voxel_idx.z].dir)]++;
-  //   }
-  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y + 1,
-  //   voxel_idx.z)) {
-  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y
-  //     + 1][voxel_idx.z].dir)]++;
-  //   }
-  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y, voxel_idx.z +
-  //   1)) {
-  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y][voxel_idx.z
-  //     + 1].dir)]++;
-  //   }
-  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x - 1, voxel_idx.y,
-  //   voxel_idx.z)) {
-  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x -
-  //     1][voxel_idx.y][voxel_idx.z].dir)]++;
-  //   }
-  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y - 1,
-  //   voxel_idx.z)) {
-  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y
-  //     - 1][voxel_idx.z].dir)]++;
-  //   }
-  //   if(isValidBlockIndex<TsdfBlock>(voxel_idx.x, voxel_idx.y, voxel_idx.z -
-  //   1)) {
-  //     frequencies[static_cast<int>(tex_block->voxels[voxel_idx.x][voxel_idx.y][voxel_idx.z
-  //     - 1].dir)]++;
-  //   }
-  //   // clang-format on
-  //   int max_freq_idx = 0;
-  //   int max_freq = 0;
-  //   for (int i = 0; i < TexVoxelDir_count; ++i) {
-  //     if (frequencies[i] > max_freq) {
-  //       max_freq = frequencies[i];
-  //       max_freq_idx = i;
-  //     }
-  //   }
-  //   tex_voxel.dir = static_cast<TexVoxelDir>(max_freq_idx);
-  // }
-}
-
 void ProjectiveTexIntegrator::updateVoxelNormalDirections(
     const TsdfLayer& tsdf_layer, TexLayer* tex_layer_ptr,
     const std::vector<Index3D>& block_indices,
     const float truncation_distance_m) {
-  const int num_blocks = block_indices.size();
-
   // Get the pointers for the indexed blocks from both
   // - The tsdf layer: Since all Voxels are already integrated here, we read
   // from this layer to estimate the normal direcitonA
-  // - The TexBlock latyer: We write the updated directions to this layer for
+  // - The TexBlock layer: We write the updated directions to this layer for
   // all new blocks
-  std::vector<const TsdfBlock*> tsdf_block_ptrs =
-      getBlockPtrsFromIndices(block_indices, tsdf_layer);
+  // NOTE(rasaford) Even though we do not modify TsdfLayer, we have to drop
+  // const here due to the way the GPUHashMap works
+  TsdfLayer* tsdf_layer_non_const = const_cast<TsdfLayer*>(&tsdf_layer);
+  std::vector<TsdfBlock*> tsdf_block_ptrs =
+      getBlockPtrsFromIndices(block_indices, tsdf_layer_non_const);
   std::vector<TexBlock*> tex_block_ptrs =
       getBlockPtrsFromIndices(block_indices, tex_layer_ptr);
 
+  // We assume that a TsdfBlock at index i corresponds to a TexBlock at i. This
+  // cannot be the case if the two vectors don't have the same number of
+  // elements
+  CHECK_EQ(tsdf_block_ptrs.size(), tex_block_ptrs.size());
+
+  const int num_blocks = block_indices.size();
   // Expand the buffers when needed
   if (num_blocks > update_normals_tex_block_prts_device_.size()) {
     const int new_size = static_cast<int>(kBufferExpansionFactor * num_blocks);
     update_normals_tex_block_prts_device_.reserve(new_size);
     update_normals_tex_block_prts_host_.reserve(new_size);
-    update_normals_tsdf_block_prts_device_.reserve(new_size);
-    update_normals_tsdf_block_prts_host_.reserve(new_size);
+    update_normals_block_indices_device_.reserve(new_size);
+    update_normals_block_indices_host_.reserve(new_size);
   }
 
   // Host -> Device
   update_normals_tex_block_prts_host_ = tex_block_ptrs;
   update_normals_tex_block_prts_device_ = update_normals_tex_block_prts_host_;
-  update_normals_tsdf_block_prts_host_ = tsdf_block_ptrs;
-  update_normals_tsdf_block_prts_device_ = update_normals_tsdf_block_prts_host_;
+  update_normals_block_indices_host_ = block_indices;
+  update_normals_block_indices_device_ = update_normals_block_indices_host_;
 
-  // Do the check on GPU
-  // Kernel call - One ThreadBlock launched per VoxelBlock
-  constexpr int kVoxelsPerSide = VoxelBlock<bool>::kVoxelsPerSide;
-  const dim3 kThreadsPerBlock(kVoxelsPerSide, kVoxelsPerSide, kVoxelsPerSide);
-  const int num_thread_blocks = num_blocks;
-  // clang-format off
-  setTexVoxelDirections<<<num_thread_blocks, kThreadsPerBlock, 0, integration_stream_>>>(
-      update_normals_tsdf_block_prts_device_.data(),
-      update_normals_tex_block_prts_device_.data(), 
-      tsdf_layer.block_size());
-  // clang-format on
-  checkCudaErrors(cudaStreamSynchronize(integration_stream_));
-  checkCudaErrors(cudaPeekAtLastError());
+  // View of BlockIndices to TsdfBlock potiners. We need this to do global
+  // position lookups for all voxels.
+  const GPULayerView<TsdfBlock> gpu_layer = tsdf_layer.getGpuLayerView();
+
+  tex::updateTexVoxelDirectionsGPU(
+      gpu_layer, update_normals_tex_block_prts_device_,
+      update_normals_block_indices_device_, num_blocks, integration_stream_,
+      tsdf_layer.block_size(), tsdf_layer.voxel_size());
 }
 
 }  // namespace nvblox

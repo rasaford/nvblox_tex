@@ -123,6 +123,7 @@ add_library(nvblox_lib SHARED
     src/primitives/scene.cpp
     src/utils/nvtx_ranges.cpp
     src/utils/timing.cpp
+    src/tex/tex_integrator_kernels.cu
 )
 target_link_libraries(nvblox_lib PUBLIC
     ${GLOG_LIBRARIES}

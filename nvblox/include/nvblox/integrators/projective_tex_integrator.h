@@ -17,8 +17,10 @@ limitations under the License.
 
 #include "nvblox/core/common_names.h"
 #include "nvblox/core/layer.h"
+#include "nvblox/gpu_hash/gpu_layer_view.h"
 #include "nvblox/integrators/projective_integrator_base.h"
 #include "nvblox/ray_tracing/sphere_tracer.h"
+#include "nvblox/tex/tex_integrator_kernels.h"
 
 namespace nvblox {
 
@@ -78,8 +80,8 @@ class ProjectiveTexIntegrator : public ProjectiveIntegratorBase {
   // Buffers for storing voxel directions
   device_vector<TexBlock*> update_normals_tex_block_prts_device_;
   host_vector<TexBlock*> update_normals_tex_block_prts_host_;
-  device_vector<const TsdfBlock*> update_normals_tsdf_block_prts_device_;
-  host_vector<const TsdfBlock*> update_normals_tsdf_block_prts_host_;
+  device_vector<Index3D> update_normals_block_indices_device_;
+  host_vector<Index3D> update_normals_block_indices_host_;
 
   // CUDA stream to process ingration on
   cudaStream_t integration_stream_;
