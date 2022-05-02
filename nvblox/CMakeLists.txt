@@ -115,6 +115,7 @@ add_library(nvblox_lib SHARED
     src/io/ply_writer.cpp
     src/mesh/marching_cubes.cu
     src/mesh/mesh_block.cu
+    src/mesh/mesh_integrator_tex.cu
     src/mesh/mesh_integrator_color.cu
     src/mesh/mesh_integrator.cpp
     src/mesh/mesh_integrator.cu

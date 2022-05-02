@@ -310,14 +310,14 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
   // Implement at least some approximation of full uv unwrapping ASAP
   // Generate a mesh from the "reconstruction"
   MeshUVIntegrator mesh_integrator;
-  MeshUVLayer mesh_layer(block_size_m_, MemoryType::kDevice);
+  MeshUVLayer mesh_layer(block_size_m_, MemoryType::kUnified);
   EXPECT_TRUE(
       mesh_integrator.integrateMeshFromDistanceField(gt_layer_,
       &mesh_layer));
-  // mesh_integrator.colorMesh(tex_layer, &mesh_layer);
+  mesh_integrator.textureMeshCPU(tex_layer, &mesh_layer);
 
   // Write to file
-  // io::outputMeshLayerToPly(mesh_layer, "tex_sphere_mesh.ply");
+  io::outputMeshLayerToPly(mesh_layer, "tex_sphere_mesh.ply");
 }
 
 int main(int argc, char** argv) {

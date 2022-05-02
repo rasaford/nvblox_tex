@@ -26,6 +26,9 @@ namespace nvblox {
  * @brief This class contains all functionality to construct a Mesh from the a
  * given Tsdf voxel grid. Specializations deal with adding color to the mesh.
  *
+ * @tparam CudaMeshBlockType_ CudaMeshBlock type to use for transferring
+ * MeshBlocks from / to the GPU
+ * @tparam MeshBlockType_ MeshBlock type to use when meshing
  */
 template <typename CudaMeshBlockType_, typename MeshBlockType_>
 class Mesher {
@@ -148,7 +151,7 @@ class MeshIntegrator : public Mesher<CudaMeshBlock, MeshBlock> {
 
  protected:
   // The color that the mesh takes if no coloring is available.
-  Color default_mesh_color_ = Color::Gray();
+  const Color default_mesh_color_ = Color::Gray();
 };
 
 /**
@@ -159,9 +162,22 @@ class MeshIntegrator : public Mesher<CudaMeshBlock, MeshBlock> {
  */
 class MeshUVIntegrator : public Mesher<CudaMeshBlockUV, MeshBlockUV> {
  public:
-  //   // automatically calls the base classes' construcor / destructor
+  void textureMesh(const TexLayer& tex_layer, MeshUVLayer* mesh_layer);
+  void textureMesh(const TexLayer& tex_layer,
+                 const std::vector<Index3D>& block_indices,
+                 MeshUVLayer* mesh_layer);
+  void textureMeshGPU(const TexLayer& tex_layer, MeshUVLayer* mesh_layer);
+  void textureMeshGPU(const TexLayer& tex_layer,
+                    const std::vector<Index3D>& block_indices,
+                    MeshUVLayer* mesh_layer);
+  void textureMeshCPU(const TexLayer& tex_layer, MeshUVLayer* mesh_layer);
+  void textureMeshCPU(const TexLayer& tex_layer,
+                    const std::vector<Index3D>& block_indices,
+                    MeshUVLayer* mesh_layer);
 
  protected:
+  // The color that the mesh takes if no coloring is available.
+  const Color default_mesh_color_ = Color::Gray();
 };
 
 }  // namespace nvblox

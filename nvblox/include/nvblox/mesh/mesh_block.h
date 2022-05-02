@@ -19,6 +19,7 @@ limitations under the License.
 
 #include "nvblox/core/blox.h"
 #include "nvblox/core/color.h"
+#include "nvblox/core/image.h"
 #include "nvblox/core/types.h"
 #include "nvblox/core/unified_ptr.h"
 #include "nvblox/core/unified_vector.h"
@@ -79,6 +80,7 @@ struct MeshBlockUV : MeshBlock {
   // the uv vector hols a 2D vector for each vertex with is uv (texture)
   // coordianates
   unified_vector<Vector2f> uvs;
+  ColorImage texture;
 
   void clear();
 

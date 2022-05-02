@@ -19,6 +19,7 @@ limitations under the License.
 
 #include "nvblox/core/layer.h"
 #include "nvblox/mesh/mesh_block.h"
+#include "nvblox/core/common_names.h"
 
 namespace nvblox {
 namespace io {
@@ -30,7 +31,9 @@ void combineMeshBlocks(const BlockLayer<MeshBlock>& layer,
                        std::vector<Vector3f>* normals_ptr,
                        std::vector<int>* triangles_ptr);
 
-bool outputMeshLayerToPly(const BlockLayer<MeshBlock>& layer,
+bool outputMeshLayerToPly(const MeshLayer& layer,
+                          const std::string& filename);
+bool outputMeshLayerToPly(const MeshUVLayer& layer,
                           const std::string& filename);
 
 }  // namespace io

@@ -23,10 +23,29 @@ limitations under the License.
 namespace nvblox {
 namespace io {
 
-bool outputMeshLayerToPly(const BlockLayer<MeshBlock>& layer,
-                          const std::string& filename) {
+bool outputMeshLayerToPly(const MeshLayer& layer, const std::string& filename) {
   // TODO: doesn't support intensity yet!!!!
   const Mesh mesh = Mesh::fromLayer(layer);
+
+  // Create the ply writer object
+  io::PlyWriter writer(filename);
+  writer.setPoints(&mesh.vertices);
+  writer.setTriangles(&mesh.triangles);
+  if (mesh.normals.size() > 0) {
+    writer.setNormals(&mesh.normals);
+  }
+  if (mesh.colors.size() > 0) {
+    writer.setColors(&mesh.colors);
+  }
+  return writer.write();
+}
+
+// TODO: this function does not implement the full MeshUV class yet (uvs
+// missing)
+// TODO: doesn't support intensity yet!!!!
+bool outputMeshLayerToPly(const MeshUVLayer& layer,
+                          const std::string& filename) {
+  const MeshUV mesh = MeshUV::fromLayer(layer);
 
   // Create the ply writer object
   io::PlyWriter writer(filename);
