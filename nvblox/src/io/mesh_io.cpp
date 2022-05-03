@@ -64,6 +64,9 @@ bool outputMeshToPly(const MeshUV& mesh, const std::string& filename) {
   if (mesh.colors.size() > 0) {
     writer.setColors(&mesh.colors);
   }
+  if (mesh.uvs.size() > 0) {
+    writer.setUVs(&mesh.uvs);
+  }
   return writer.write();
 }
 

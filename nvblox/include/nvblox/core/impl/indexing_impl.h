@@ -60,6 +60,7 @@ void getBlockAndVoxelIndexFromPositionInLayer(const float block_size,
   *voxel_idx =
       ((position - block_size * block_idx->cast<float>()) * voxel_size_inv)
           .array()
+          .floor()
           .cast<int>()
           .min(kVoxelsPerSideMinusOne);
 }

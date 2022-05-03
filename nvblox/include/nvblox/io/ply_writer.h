@@ -43,6 +43,7 @@ class PlyWriter {
   void setTriangles(const std::vector<int>* triangles) {
     triangles_ = triangles;
   }
+  void setUVs(const std::vector<Vector2f>* uvs) { uvs_ = uvs; }
 
   // Call this after points, normals, triangles, etc. have been added to write
   // to file.
@@ -58,6 +59,7 @@ class PlyWriter {
   const std::vector<float>* intensities_ = nullptr;
   const std::vector<Color>* colors_ = nullptr;
   const std::vector<int>* triangles_ = nullptr;
+  const std::vector<Vector2f>* uvs_ = nullptr;
 
   std::ofstream file_;
 };

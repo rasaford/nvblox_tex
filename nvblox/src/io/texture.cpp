@@ -29,14 +29,15 @@ std::unique_ptr<TexturedMesh> packTextures(
   std::vector<Color*> patches;
   std::unordered_map<int, std::vector<int>> patch_vertices;
   int num_vertices = 0;
-
+  int num_patches = 0;
   for (const Index3D& block_index : block_indices) {
     MeshBlockUV::ConstPtr block_ptr = mesh_layer.getBlockAtIndex(block_index);
     if (block_ptr == nullptr) {
       continue;
     }
+
     const std::vector<Color*> block_patches = block_ptr->getPatchVectorOnCPU();
-    // patches.reserve(patches.end() + block_ptr->patches.size());
+    patches.reserve(patches.size() + block_ptr->patches.size());
     patches.insert(patches.end(), block_ptr->patches.begin(),
                    block_ptr->patches.end());
 
@@ -46,12 +47,17 @@ std::unique_ptr<TexturedMesh> packTextures(
     const std::vector<int> block_vertex_patches =
         block_ptr->getVertexPatchVectorOnCPU();
     for (int i = 0; i < block_vertex_patches.size(); ++i) {
-      const int patch_id = block_vertex_patches[i];
-      patch_vertices[patch_id].push_back(num_vertices + i);
+      const int patch_id = num_patches + block_vertex_patches[i];
+      const int vertex_id = num_vertices + i;
+      patch_vertices[patch_id].push_back(vertex_id);
     }
     num_vertices += block_vertex_patches.size();
+    num_patches += block_ptr->patches.size();
   }
+  // Sanity checks to make sure block level indices have been correctly
+  // converted to global indices
   CHECK_EQ(mesh.vertices.size(), num_vertices);
+  CHECK_EQ(patches.size(), num_patches);
 
   const int texture_patch_width = static_cast<int>(ceil(sqrt(patches.size())));
   const int padded_patch_width = patch_width + padding;
@@ -72,13 +78,15 @@ std::unique_ptr<TexturedMesh> packTextures(
     const Index2D top_left(
         padded_patch_width * (patch_idx % texture_patch_width),
         padded_patch_width * (patch_idx / texture_patch_width));
-    const Vector2f top_left_uv = top_left.cast<float>() / texture_width;
+    const Vector2f top_left_uv = top_left.array().cast<float>() / texture_width;
 
     // Offset and scale patch uvs to fit in the global texture
     for (const int& vertex_idx : patch_vertices[patch_idx]) {
-      const Vector2f offset_uvs =
+      Vector2f offset_uvs =
           top_left_uv + (patch_width / static_cast<float>(texture_width)) *
                             mesh.uvs[vertex_idx];
+      // flip y axis
+      offset_uvs(1) = 1 - offset_uvs(1);
       mesh.uvs[vertex_idx] = offset_uvs;
     }
 

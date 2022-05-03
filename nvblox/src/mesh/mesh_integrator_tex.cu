@@ -264,8 +264,7 @@ Vector2f MeshUVIntegrator::projectToTexPatch(
   // NOTE(rasaford) since the directions encoded in TexVoxel::Dir are aligned
   // with the major coordinate axes, we do not need to do a complicated
   // projection here but can just take the respective coordinates directly
-  const float half_voxel_size = 0.5f * voxel_size;
-  const Vector3f texel_coords = (vertex - voxel_center) / half_voxel_size;
+  const Vector3f texel_coords = (vertex - voxel_center) / voxel_size;
   Vector2f uv;
   switch (direction) {
     case TexVoxel::Dir::X_PLUS:

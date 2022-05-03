@@ -84,6 +84,13 @@ void PlyWriter::writeHeader() {
     file_ << "property uchar blue" << std::endl;
   }
 
+  // blender compatible normals definition. For more details see:
+  // https://blender.stackexchange.com/questions/240331/why-does-blender-not-load-a-textured-plys-texture
+  if (uvs_) {
+    file_ << "property float s" << std::endl;
+    file_ << "property float t" << std::endl;
+  }
+
   if (triangles_) {
     // TODO: check if "vertex_index" or "vertex_indices"
     file_ << "element face " << triangles_->size() / 3 << std::endl;
@@ -113,6 +120,11 @@ void PlyWriter::writePoints() {
       const Color& color = (*colors_)[i];
       file_ << " " << std::to_string(color.r) << " " << std::to_string(color.g)
             << " " << std::to_string(color.b);
+    }
+
+    if (uvs_) {
+      const Vector2f& uv = (*uvs_)[i];
+      file_ << " " << std::to_string(uv(0)) << " " << std::to_string(uv(1));
     }
     file_ << std::endl;
   }
