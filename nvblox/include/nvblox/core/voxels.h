@@ -18,6 +18,7 @@ limitations under the License.
 #include <Eigen/Core>
 
 #include "nvblox/core/color.h"
+#include "nvblox/core/types.h"
 
 namespace nvblox {
 
@@ -51,10 +52,11 @@ struct ColorVoxel {
 
 // Each TexVoxel is a 2d grid of colors for each voxel
 template <typename _ElementType, int _PatchWidth>
-struct TexVoxelTemplate {
+class TexVoxelTemplate {
   // Six possible directors for each 2D texture plane to be facing in
   // 3D space. The orientation of each plane will be determined at allocation
   // time
+ public:
   enum class Dir { X_PLUS, X_MINUS, Y_PLUS, Y_MINUS, Z_PLUS, Z_MINUS, NONE };
   // number of elements in the enum has to always match
   static constexpr int Dir_count = 7;
@@ -62,7 +64,9 @@ struct TexVoxelTemplate {
   // make the template params queryable as TexVoxelTemplate::ElementType etc.
   typedef _ElementType ElementType;
 
-  __host__ __device__ inline bool isInitialized() const { return dir != Dir::NONE; }
+  __host__ __device__ inline bool isInitialized() const {
+    return dir != Dir::NONE;
+  }
 
   // Access
   __host__ __device__ inline ElementType operator()(const int row_idx,
@@ -90,6 +94,9 @@ struct TexVoxelTemplate {
   // hopefully this value does not get stored for every TexVoxel this way
   static constexpr int kPatchWidth = _PatchWidth;
   // patch size in pixels. Each TexVoxel is of size (kPatchWidth, kPatchWidth)
+  // NOTE(rasaford) We intentionally chose an array of colors here, instead of
+  // using the functionality in image.h, since we want to use the absolute
+  // minimum amount of memory for each TexVoxel.
   Color colors[kPatchWidth * kPatchWidth];
   // how confident we are in this observation
   float weight = 0.0;
@@ -100,6 +107,8 @@ struct TexVoxelTemplate {
 
 // For convenience we define this non-templated version of TexVoxel.
 // Each TexVoxel is a 2d grid of colors for each voxel
+// NOTE(rasaford) To actually be able to use this type, it needs to be defined
+// in voxels.cpp (above its only the declaration).
 typedef TexVoxelTemplate<Color, 4> TexVoxel;
 
 struct FreespaceVoxel {

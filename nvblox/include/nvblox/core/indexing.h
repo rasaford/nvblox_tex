@@ -47,21 +47,38 @@ __host__ __device__ inline Vector3f getCenterPostionFromBlockIndexAndVoxelIndex(
     const Index3D& voxel_index);
 
 /**
- * @brief Transfroms the texel_index to 2D texel coordiantes
+ * @brief Transfroms the texel_index to 2D texel coordinates
+ * Where:
+ *  - The point (0, 0) is the center of the texel plane
+ *  - The width / height of the plane is the voxel size
  *
- * @param texel_index
- * @param voxels_per_side
+ * @param pixel_index
+ * @param patch_width
  * @param voxel_size
- * @return Vector2f
+ * @return __host__
  */
 __host__ __device__ inline Vector2f getTexelCoordsfromIdx(
-    const Index2D& texel_index, const int texels_per_side,
-    const float voxel_size);
+    const Index2D& pixel_index, const int patch_width, const float voxel_size);
+
 
 __host__ __device__ inline Vector3f getCenterPositionForTexel(
     const float block_size, const Index3D& block_index,
-    const Index3D& voxel_index, const Index2D& texel_index,
+    const Index3D& voxel_index, const Index2D& pixel_index,
     const TexVoxel::Dir dir);
+
+/**
+ * @brief Used for a mesh block's packed texture tiles
+ *
+ * @param uv_coords
+ * @param patches_per_side
+ * @return __host__
+ */
+__host__ __device__ inline Index2D getTileIndexFromUVs(
+    const Vector2f& uv_coords, const int patches_per_side);
+
+__host__ __device__ inline Vector2f getTopLeftUVFromTileIndex(
+    const Index2D& tile_index, const int patches_per_side);
+
 }  // namespace nvblox
 
 #include "nvblox/core/impl/indexing_impl.h"

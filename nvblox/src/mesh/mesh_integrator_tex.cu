@@ -1,5 +1,6 @@
 #include <cuda_runtime.h>
 
+#include <utility>
 #include "nvblox/core/accessors.h"
 #include "nvblox/core/common_names.h"
 #include "nvblox/integrators/integrators_common.h"
@@ -257,6 +258,34 @@ void MeshUVIntegrator::textureMeshGPU(
   //                            default_mesh_color_, mesh_layer, cuda_stream_);
 }
 
+Vector2f MeshUVIntegrator::projectToTexPatch(
+    const Vector3f& vertex, const Vector3f& voxel_center,
+    const float voxel_size, const TexVoxel::Dir direction) const {
+  // NOTE(rasaford) since the directions encoded in TexVoxel::Dir are aligned
+  // with the major coordinate axes, we do not need to do a complicated
+  // projection here but can just take the respective coordinates directly
+  const float half_voxel_size = 0.5f * voxel_size;
+  const Vector3f texel_coords = (vertex - voxel_center) / half_voxel_size;
+  Vector2f uv;
+  switch (direction) {
+    case TexVoxel::Dir::X_PLUS:
+    case TexVoxel::Dir::X_MINUS:
+      uv << texel_coords(1), texel_coords(2);
+      break;
+    case TexVoxel::Dir::Y_PLUS:
+    case TexVoxel::Dir::Y_MINUS:
+      uv << texel_coords(0), texel_coords(2);
+      break;
+    case TexVoxel::Dir::Z_PLUS:
+    case TexVoxel::Dir::Z_MINUS:
+      uv << texel_coords(0), texel_coords(1);
+      break;
+    default:
+      uv << -1.0f, -1.0f;
+  }
+  return uv + Vector2f(0.5f, 0.5f);
+}
+
 void MeshUVIntegrator::textureMeshCPU(const TexLayer& tex_layer,
                                       MeshUVLayer* mesh_layer) {
   textureMeshCPU(tex_layer, mesh_layer->getAllBlockIndices(), mesh_layer);
@@ -271,17 +300,47 @@ void MeshUVIntegrator::textureMeshCPU(const TexLayer& tex_layer,
     if (block == nullptr) {
       continue;
     }
-    block->colors.resize(block->vertices.size());
+    // pre-allocate all buffers to the required size
+    block->expandColorsToMatchVertices();
+    block->expandUVsToMatchVertices();
+    block->expandVertexPatchesToMatchVertices();
+
     for (int i = 0; i < block->vertices.size(); i++) {
       const Vector3f& vertex = block->vertices[i];
       const TexVoxel* tex_voxel;
+      // not all blocks in a layer might be allocated. So we check if a voxel
+      // exists at the vertex position.
       if (getVoxelAtPosition<TexVoxel>(tex_layer, vertex, &tex_voxel)) {
-        block->colors[i] =
-            (*tex_voxel)(TexVoxel::kPatchWidth / 2, TexVoxel::kPatchWidth / 2);
-        // std::cout << "vertex: " << vertex
-        //           << "color: " << (int)block->colors[i].r << std::endl;
+        Index3D tex_block_index, tex_voxel_index;
+        getBlockAndVoxelIndexFromPositionInLayer(
+            tex_layer.block_size(), vertex, &tex_block_index, &tex_voxel_index);
+        const Vector3f voxel_center =
+            getCenterPostionFromBlockIndexAndVoxelIndex(
+                tex_layer.block_size(), tex_block_index, tex_voxel_index);
+
+        // Add the tex_voxel's colors as a patch to the MeshBlockUV.
+        // NOTE(rasaford) Since getVoxelAtPosition() requires a const pointer,
+        // we have to do this ugly const_cast here. In reality the
+        // TexVoxel*->colors attribute is non-const anyways.
+        const int patch_index = block->addPatch(
+            tex_block_index, tex_voxel_index, tex_voxel->kPatchWidth,
+            tex_voxel->kPatchWidth, const_cast<TexVoxel*>(tex_voxel)->colors);
+
+        const Vector2f patch_uv = projectToTexPatch(
+            vertex, voxel_center, tex_layer.voxel_size(), tex_voxel->dir);
+        const Vector2f patch_uv_px = TexVoxel::kPatchWidth * patch_uv;
+        Color interpolate;
+        interpolation::interpolate2DLinear<Color>(
+            tex_voxel->colors, patch_uv_px, TexVoxel::kPatchWidth,
+            TexVoxel::kPatchWidth, &interpolate);
+
+        block->colors[i] = std::move(interpolate);
+        block->uvs[i] = std::move(patch_uv);
+        block->vertex_patches[i] = patch_index;
+
       } else {
         block->colors[i] = Color::Gray();
+        block->uvs[i] = Vector2f::Zero();
       }
     }
   }

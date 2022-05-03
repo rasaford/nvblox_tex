@@ -34,15 +34,17 @@ struct Mesh {
 
   // Factory
   static Mesh fromLayer(const BlockLayer<MeshBlock>& layer);
+  static Mesh fromLayer(const BlockLayer<MeshBlock>& layer, const std::vector<Index3D>& block_indices);
 };
 
 // Same as a regular mesh but also defines uv coordinates for each vertex
-struct MeshUV : Mesh {
+struct MeshUV : public Mesh {
   // Data
   std::vector<Vector2f> uvs;
 
   // Factory
   static MeshUV fromLayer(const BlockLayer<MeshBlockUV>& layer);
+  static MeshUV fromLayer(const BlockLayer<MeshBlockUV>& layer, const std::vector<Index3D>& block_indices);
 };
 
 }  // namespace nvblox

@@ -15,8 +15,8 @@ limitations under the License.
 */
 #pragma once
 
+#include <algorithm>
 #include <memory>
-
 #include "nvblox/core/blox.h"
 #include "nvblox/core/color.h"
 #include "nvblox/core/image.h"
@@ -30,6 +30,7 @@ namespace nvblox {
 // Each block contains only the UPPER part of its neighbors: i.e., the max
 // x, y, and z axes. Its neighbors are responsible for the rest.
 struct MeshBlock {
+ public:
   typedef std::shared_ptr<MeshBlock> Ptr;
   typedef std::shared_ptr<const MeshBlock> ConstPtr;
 
@@ -68,28 +69,48 @@ struct MeshBlock {
 
   // Note(alexmillane): Memory type ignored, MeshBlocks live in CPU memory.
   static Ptr allocate(MemoryType memory_type);
+
+ protected:
+  // MemoryType of the objects this Block contains. Usefull for allocateing more
+  // memory of the same type
+  const MemoryType memory_type_;
 };
 
-struct MeshBlockUV : MeshBlock {
+struct MeshBlockUV : public MeshBlock {
+ public:
   typedef std::shared_ptr<MeshBlockUV> Ptr;
   typedef std::shared_ptr<const MeshBlockUV> ConstPtr;
-
-  MeshBlockUV(MemoryType memory_type = MemoryType::kDevice);
 
   // Mesh Data
   // the uv vector hols a 2D vector for each vertex with is uv (texture)
   // coordianates
   unified_vector<Vector2f> uvs;
-  ColorImage texture;
+  // Each TexVoxel that is meshed contains a fixed size texture patch
+  unified_vector<Color*> patches;
+  // Each vertex is assigned an index into the patches vector, defining which
+  // patch it's uv coordinates belong to
+  unified_vector<int> vertex_patches;
+
+  MeshBlockUV(MemoryType memory_type = MemoryType::kDevice);
+
+  int addPatch(const Index3D& block_index, const Index3D& voxel_index,
+               const int rows, const int cols, Color* patch);
 
   void clear();
 
   void expandUVsToMatchVertices();
 
+  void expandVertexPatchesToMatchVertices();
+
   // Copy mesh data to the CPU.
-  std::vector<Vector2f> getUVvectorOnCPU() const;
+  std::vector<Vector2f> getUVVectorOnCPU() const;
+  std::vector<Color*> getPatchVectorOnCPU() const;
+  std::vector<int> getVertexPatchVectorOnCPU() const;
 
   static Ptr allocate(MemoryType memory_type);
+
+ protected:
+  unified_vector<Index6D> known_patch_indices;
 };
 
 // Helper struct for mesh blocks on CUDA.
@@ -111,7 +132,7 @@ struct CudaMeshBlockUV : CudaMeshBlock {
   CudaMeshBlockUV() = default;
   CudaMeshBlockUV(MeshBlockUV* block);
 
-  Vector2f* uvs;
+  Vector2f* uvs_;
 };
 
 }  // namespace nvblox

@@ -54,9 +54,13 @@ endif()
 # TODO(alexmillane): check the ROS builds here.
 find_package(gflags REQUIRED)
 
+# Add opencv dependency
+find_package(OpenCV REQUIRED)
+
 # Include dirs
 include_directories(${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
 include_directories(include)
+include_directories(${OpenCV_INCLUDE_DIRS})
 
 #############
 # LIBRARIES #
@@ -65,9 +69,9 @@ include_directories(include)
 add_library(nvblox_cuda_check SHARED
     src/core/cuda/error_check.cu
 )
-if(CMAKE_BUILD_TYPE STREQUAL "Debug") 
-    target_compile_options(nvblox_cuda_check PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-G>)
-endif()
+# if(CMAKE_BUILD_TYPE STREQUAL "Debug") 
+#     target_compile_options(nvblox_cuda_check PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-G>)
+# endif()
 
 add_library(nvblox_gpu_hash SHARED
     src/gpu_hash/cuda/gpu_layer_view.cu
@@ -85,9 +89,9 @@ target_link_libraries(nvblox_gpu_hash PUBLIC
     ${GLOG_LIBRARIES}
 )
 target_link_options(nvblox_gpu_hash PUBLIC ${nvblox_link_options})
-if(CMAKE_BUILD_TYPE STREQUAL "Debug") 
-    target_compile_options(nvblox_gpu_hash PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-G>)
-endif()
+# if(CMAKE_BUILD_TYPE STREQUAL "Debug") 
+#     target_compile_options(nvblox_gpu_hash PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-G>)
+# endif()
 
 add_library(nvblox_lib SHARED
     src/core/bounding_boxes.cpp
@@ -99,6 +103,7 @@ add_library(nvblox_lib SHARED
     src/core/image.cpp
     src/core/interpolation_3d.cpp
     src/core/mapper.cpp
+    src/core/voxels.cpp
     src/datasets/image_loader.cpp
     src/datasets/parse_3dmatch.cpp
     src/integrators/cuda/frustum.cu
@@ -113,6 +118,7 @@ add_library(nvblox_lib SHARED
     src/io/csv.cpp
     src/io/mesh_io.cpp
     src/io/ply_writer.cpp
+    src/io/texture.cpp
     src/mesh/marching_cubes.cu
     src/mesh/mesh_block.cu
     src/mesh/mesh_integrator_tex.cu
@@ -135,6 +141,7 @@ target_link_libraries(nvblox_lib PUBLIC
     nvblox_cuda_check
     nvblox_eigen
     cuda-samples
+    ${OpenCV_LIBS}
 )
 target_link_options(nvblox_lib PUBLIC ${nvblox_link_options})
 target_include_directories(nvblox_lib PUBLIC 
@@ -150,9 +157,9 @@ else()
     set_target_properties(nvblox_lib PROPERTIES CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS})
     set_target_properties(nvblox_lib PROPERTIES EXPORT_PROPERTIES CMAKE_CUDA_FLAGS)
 endif()
-if(CMAKE_BUILD_TYPE STREQUAL "Debug") 
-    target_compile_options(nvblox_lib PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-G>)
-endif()
+# if(CMAKE_BUILD_TYPE STREQUAL "Debug") 
+#     target_compile_options(nvblox_lib PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-G>)
+# endif()
 
 ############
 # BINARIES #

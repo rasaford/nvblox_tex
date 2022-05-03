@@ -18,6 +18,7 @@ limitations under the License.
 #include <cuda_runtime.h>
 #include <stdint.h>
 #include <cmath>
+#include <vector>
 
 namespace nvblox {
 
@@ -33,6 +34,8 @@ struct Color {
   bool operator==(const Color& other) const {
     return (r == other.r) && (g == other.g) && (b == other.b);
   }
+
+  std::vector<uint8_t> data() const { return {r, g, b}; }
 
   // Static functions for working with colors
   static Color blendTwoColors(const Color& first_color, float first_weight,

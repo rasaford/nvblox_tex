@@ -92,25 +92,26 @@ Vector3f getCenterPostionFromBlockIndexAndVoxelIndex(
          Vector3f(half_voxel_size, half_voxel_size, half_voxel_size);
 }
 
-Vector2f getTexelCoordsfromIdx(const Index2D& texel_index,
-                               const int texels_per_side,
-                               const float voxel_size) {
-  const float half_texel = texels_per_side / 2.0f;
-  const float texel_size = voxel_size / texels_per_side;
-  return (texel_size / (texel_size + 1)) * (voxel_size / texels_per_side) *
-         (texel_index.cast<float>() - Vector2f(half_texel, half_texel));
+Vector2f getTexelCoordsfromIdx(const Index2D& pixel_index,
+                               const int patch_width, const float voxel_size) {
+  const float texel_size = voxel_size / patch_width;
+  return texel_size *
+         (pixel_index.cast<float>() / patch_width - Vector2f(0.5f, 0.5f));
 }
 
 Vector3f getCenterPositionForTexel(const float block_size,
                                    const Index3D& block_index,
                                    const Index3D& voxel_index,
-                                   const Index2D& texel_index,
+                                   const Index2D& pixel_index,
                                    const TexVoxel::Dir dir) {
   const Vector3f voxel_center = getCenterPostionFromBlockIndexAndVoxelIndex(
       block_size, block_index, voxel_index);
   const float voxel_size = block_size / VoxelBlock<bool>::kVoxelsPerSide;
-  const Vector2f texel_coords =
-      getTexelCoordsfromIdx(texel_index, TexVoxel::kPatchWidth, voxel_size);
+  Vector2f texel_coords =
+      getTexelCoordsfromIdx(pixel_index, TexVoxel::kPatchWidth, voxel_size);
+  // scale texel coordinates such that each pixel is mapped to it's center in
+  // texel space
+  texel_coords *= TexVoxel::kPatchWidth / (TexVoxel::kPatchWidth + 1);
   Vector3f pos;
 
   // TODO: (rasaford) is fallthrough correct here?
@@ -131,7 +132,17 @@ Vector3f getCenterPositionForTexel(const float block_size,
       pos << 0.0f, 0.0f, 0.0f;
       break;
   }
-  return pos;
+  return voxel_center + pos;
+}
+
+__host__ __device__ inline Index2D getTileIndexFromUVs(
+    const Vector2f& uv_coords, const int patches_per_side) {
+  return (uv_coords * patches_per_side).array().floor().cast<int>();
+}
+
+__host__ __device__ inline Vector2f getTopLeftUVFromTileIndex(
+    const Index2D& tile_index, const int patches_per_side) {
+  return tile_index.cast<float>() / static_cast<float>(patches_per_side);
 }
 
 }  // namespace nvblox

@@ -18,15 +18,16 @@ limitations under the License.
 namespace nvblox {
 
 Mesh Mesh::fromLayer(const BlockLayer<MeshBlock>& layer) {
-  Mesh mesh;
+  return Mesh::fromLayer(layer, layer.getAllBlockIndices());
+}
 
+Mesh Mesh::fromLayer(const BlockLayer<MeshBlock>& layer,
+                     const std::vector<Index3D>& block_indices) {
+  Mesh mesh;
   // Keep track of the vertex index.
   int next_index = 0;
 
-  // Iterate over every block in the layer.
-  const std::vector<Index3D> indices = layer.getAllBlockIndices();
-
-  for (const Index3D& index : indices) {
+  for (const Index3D& index : block_indices) {
     MeshBlock::ConstPtr block = layer.getBlockAtIndex(index);
 
     // Copy over.
@@ -67,16 +68,18 @@ Mesh Mesh::fromLayer(const BlockLayer<MeshBlock>& layer) {
 }
 
 MeshUV MeshUV::fromLayer(const BlockLayer<MeshBlockUV>& layer) {
+  return MeshUV::fromLayer(layer, layer.getAllBlockIndices());
+}
+
+MeshUV MeshUV::fromLayer(const BlockLayer<MeshBlockUV>& layer,
+                 const std::vector<Index3D>& block_indices) {
   MeshUV mesh;
 
   // Keep track of the vertex index.
   int next_index = 0;
 
-  // Iterate over every block in the layer.
-  const std::vector<Index3D> indices = layer.getAllBlockIndices();
-
-  for (const Index3D& index : indices) {
-    MeshBlock::ConstPtr block = layer.getBlockAtIndex(index);
+  for (const Index3D& index : block_indices) {
+    MeshBlockUV::ConstPtr block = layer.getBlockAtIndex(index);
 
     // Copy over.
     const std::vector<Vector3f> vertices = block->getVertexVectorOnCPU();
@@ -92,6 +95,10 @@ MeshUV MeshUV::fromLayer(const BlockLayer<MeshBlockUV>& layer) {
     const std::vector<Color> colors = block->getColorVectorOnCPU();
     mesh.colors.resize(mesh.colors.size() + colors.size());
     std::copy(colors.begin(), colors.end(), mesh.colors.begin() + next_index);
+    
+    const std::vector<Vector2f> uvs = block->getUVVectorOnCPU();
+    mesh.uvs.resize(mesh.uvs.size() + uvs.size());
+    std::copy(uvs.begin(), uvs.end(), mesh.uvs.begin() + next_index);
 
     // Our simple mesh implementation has:
     // - per vertex colors

@@ -43,13 +43,13 @@ class SphereBenchmark {
 
  private:
   // Settings. Do not modify or the benchmark isn't comparable.
-  static constexpr float kVoxelSize = 0.05;
-  static constexpr float kBlockSize =
+  constexpr static float kVoxelSize = 0.05;
+  constexpr static float kBlockSize =
       VoxelBlock<TsdfVoxel>::kVoxelsPerSide * kVoxelSize;
-  static constexpr int kNumTrajectoryPoints = 80;
-  static constexpr float kSphereRadius = 2.0f;
-  static constexpr float kTrajectoryRadius = 4.0f;
-  static constexpr float kMaxEnvironmentDimension = 5.0f;
+  constexpr static int kNumTrajectoryPoints = 80;
+  constexpr static float kSphereRadius = 2.0f;
+  constexpr static float kTrajectoryRadius = 4.0f;
+  constexpr static float kMaxEnvironmentDimension = 5.0f;
 
   // Actual layers.
   TsdfLayer tsdf_layer_;

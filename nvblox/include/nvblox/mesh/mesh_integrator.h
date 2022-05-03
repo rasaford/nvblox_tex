@@ -164,16 +164,21 @@ class MeshUVIntegrator : public Mesher<CudaMeshBlockUV, MeshBlockUV> {
  public:
   void textureMesh(const TexLayer& tex_layer, MeshUVLayer* mesh_layer);
   void textureMesh(const TexLayer& tex_layer,
-                 const std::vector<Index3D>& block_indices,
-                 MeshUVLayer* mesh_layer);
+                   const std::vector<Index3D>& block_indices,
+                   MeshUVLayer* mesh_layer);
   void textureMeshGPU(const TexLayer& tex_layer, MeshUVLayer* mesh_layer);
   void textureMeshGPU(const TexLayer& tex_layer,
-                    const std::vector<Index3D>& block_indices,
-                    MeshUVLayer* mesh_layer);
+                      const std::vector<Index3D>& block_indices,
+                      MeshUVLayer* mesh_layer);
   void textureMeshCPU(const TexLayer& tex_layer, MeshUVLayer* mesh_layer);
   void textureMeshCPU(const TexLayer& tex_layer,
-                    const std::vector<Index3D>& block_indices,
-                    MeshUVLayer* mesh_layer);
+                      const std::vector<Index3D>& block_indices,
+                      MeshUVLayer* mesh_layer);
+
+ private:
+  Vector2f projectToTexPatch(
+      const Vector3f& vertex, const Vector3f& voxel_center,
+      const float voxel_size, const TexVoxel::Dir direction) const;
 
  protected:
   // The color that the mesh takes if no coloring is available.

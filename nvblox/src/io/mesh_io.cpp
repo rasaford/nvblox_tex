@@ -25,8 +25,10 @@ namespace io {
 
 bool outputMeshLayerToPly(const MeshLayer& layer, const std::string& filename) {
   // TODO: doesn't support intensity yet!!!!
-  const Mesh mesh = Mesh::fromLayer(layer);
+  return outputMeshToPly(Mesh::fromLayer(layer), filename);
+}
 
+bool outputMeshToPly(const Mesh& mesh, const std::string& filename) {
   // Create the ply writer object
   io::PlyWriter writer(filename);
   writer.setPoints(&mesh.vertices);
@@ -45,8 +47,13 @@ bool outputMeshLayerToPly(const MeshLayer& layer, const std::string& filename) {
 // TODO: doesn't support intensity yet!!!!
 bool outputMeshLayerToPly(const MeshUVLayer& layer,
                           const std::string& filename) {
-  const MeshUV mesh = MeshUV::fromLayer(layer);
+  return outputMeshToPly(MeshUV::fromLayer(layer), filename);
+}
 
+// TODO: this function does not implement the full MeshUV class yet (uvs
+// missing)
+// TODO: doesn't support intensity yet!!!!
+bool outputMeshToPly(const MeshUV& mesh, const std::string& filename) {
   // Create the ply writer object
   io::PlyWriter writer(filename);
   writer.setPoints(&mesh.vertices);
