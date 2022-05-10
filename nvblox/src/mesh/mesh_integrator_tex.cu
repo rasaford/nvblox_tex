@@ -285,6 +285,20 @@ Vector2f MeshUVIntegrator::projectToTexPatch(
   return uv + Vector2f(0.5f, 0.5f);
 }
 
+Color MeshUVIntegrator::getDirColor(const TexVoxel::Dir dir) const {
+  switch(dir) {
+    case TexVoxel::Dir::X_PLUS:
+    case TexVoxel::Dir::X_MINUS:
+      return Color::Red();
+    case TexVoxel::Dir::Y_PLUS:
+    case TexVoxel::Dir::Y_MINUS:
+      return Color::Green();
+    case TexVoxel::Dir::Z_PLUS:
+    case TexVoxel::Dir::Z_MINUS:
+      return Color::Blue();
+  }
+}
+
 void MeshUVIntegrator::textureMeshCPU(const TexLayer& tex_layer,
                                       MeshUVLayer* mesh_layer) {
   textureMeshCPU(tex_layer, mesh_layer->getAllBlockIndices(), mesh_layer);
@@ -333,8 +347,11 @@ void MeshUVIntegrator::textureMeshCPU(const TexLayer& tex_layer,
             tex_voxel->colors, patch_uv_px, TexVoxel::kPatchWidth,
             TexVoxel::kPatchWidth, &interpolate);
 
-        block->colors[i] = std::move(interpolate);
-        block->uvs[i] = std::move(patch_uv);
+
+
+        // block->colors[i] = interpolate;
+        block->colors[i] = getDirColor(tex_voxel->dir);
+        block->uvs[i] = patch_uv;
         block->vertex_patches[i] = patch_index;
 
       } else {

@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 #include <gtest/gtest.h>
+#include <map>
 #include <opencv2/opencv.hpp>
 
 #include "nvblox/core/accessors.h"
@@ -278,6 +279,33 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
     callFunctionOnAllVoxels<TexVoxel>(*tex_layer.getBlockAtIndex(block_idx),
                                       color_check_lambda);
   }
+
+  // check that all TexVoxel directions are equally frequent in the textured
+  // sphere. Tolerance defines the minimal ratio of the least frequent direction
+  // to the most frequent one
+  const float dir_tolerance = 0.5;
+  auto dir_frequencies = std::unordered_map<TexVoxel::Dir, int>();
+  auto populate_dir_frequencies = [&dir_frequencies](
+                                      const Index3D& voxel_idx,
+                                      const TexVoxel* voxel) -> void {
+    if (dir_frequencies.find(voxel->dir) != dir_frequencies.end()) {
+      dir_frequencies[voxel->dir]++;
+    } else {
+      dir_frequencies[voxel->dir] = 1;
+    }
+  };
+  for (const Index3D& block_idx : touched_blocks) {
+    callFunctionOnAllVoxels<TexVoxel>(*tex_layer.getBlockAtIndex(block_idx),
+                                      populate_dir_frequencies);
+  }
+  int min_freq = 1000000, max_freq = 0;
+  for (const auto& item : dir_frequencies) {
+    if (item.first == TexVoxel::Dir::NONE) continue;
+    min_freq = MIN(min_freq, item.second);
+    max_freq = MAX(max_freq, item.second);
+  }
+  EXPECT_GT(min_freq, 0);
+  EXPECT_GT(static_cast<float>(min_freq) / max_freq, dir_tolerance);
 
   // Check that most points on the surface of the sphere have been observed
   int num_points_on_sphere_surface_observed = 0;
