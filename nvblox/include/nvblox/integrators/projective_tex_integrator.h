@@ -21,6 +21,7 @@ limitations under the License.
 #include "nvblox/integrators/projective_integrator_base.h"
 #include "nvblox/ray_tracing/sphere_tracer.h"
 #include "nvblox/tex/tex_integrator_kernels.h"
+#include "nvblox/tex/tex_conversions.h"
 
 namespace nvblox {
 

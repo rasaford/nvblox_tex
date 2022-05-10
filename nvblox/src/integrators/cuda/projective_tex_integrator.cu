@@ -98,33 +98,27 @@ void ProjectiveTexIntegrator::integrateFrame(
   }
 }
 
-__device__ inline void updateTexel(const Color& color_measured,
-                                   TexVoxel* tex_voxel,
-                                   const Index2D& texel_idx,
-                                   const float voxel_depth_m,
-                                   const float truncation_distance_m,
-                                   const float max_weight) {
-  // NOTE(alexmillane): We integrate all voxels passed to this function, We
-  // should probably not do this. We should no update some based on occlusion
-  // and their distance in the distance field....
-  // TODO(alexmillane): The above.
-
-  // Read CURRENT voxel values (from global GPU memory)
-  // const Color& texel_color_current = (*tex_voxel)(texel_idx);
+__device__ inline float computeMeasurementWeight(const TexVoxel* tex_voxel,
+                                                 const Transform T_C_L) {
   // TODO: (rasaford) compute measurement weight based on e.g.
   // - size of the projected texel in the image
   // - sharpness of the projected area in the image (to compensate motion blur)
   // - how flat on we're looking at the texel projection
   // - if the texel is on a boundary
   // - ...
-  // constexpr float measurement_weight = 1.0f;
-  // const Color fused_color =
-  //     blendTwoColors(texel_color_current, texel_weight_current,
-  //     color_measured,
-  //                    measurement_weight);
-  // Write NEW voxel values (to global GPU memory)
-  (*tex_voxel)(texel_idx) = color_measured;
-  // tex_voxel->weight = weight;
+  Vector3f world_vector = tex::texDirToWorldVector(tex_voxel->dir);
+  Vector3f t_C_L = T_C_L.translation();
+
+  return fabs(world_vector.dot(t_C_L));
+}
+
+__device__ inline void updateTexel(const Color& color_measured,
+                                   TexVoxel* tex_voxel,
+                                   const Index2D& texel_idx,
+                                   const float measurement_weight) {
+  const Color old_color = (*tex_voxel)(texel_idx);
+  (*tex_voxel)(texel_idx) = blendTwoColors(old_color, tex_voxel->weight,
+                                           color_measured, measurement_weight);
 }
 
 __global__ void integrateBlocks(
@@ -188,8 +182,13 @@ __global__ void integrateBlocks(
     return;
   }
 
+  // Update the weight of each tex voxel once per voxel (instead of once per
+  // texel) as the average of the new and old weights
+  float measurement_weight = computeMeasurementWeight(voxel_ptr, T_C_L);
+
   Color image_value;
   Index2D texel_idx;
+
   // loop over all colors in the TexVoxel patch
   for (int row = 0; row < voxel_ptr->kPatchWidth; ++row) {
     for (int col = 0; col < voxel_ptr->kPatchWidth; ++col) {
@@ -205,17 +204,14 @@ __global__ void integrateBlocks(
       if (!interpolation::interpolate2DLinear<Color>(
               color_image, u_px, color_rows, color_cols, &image_value))
         continue;
-      // TODO: a weight of 1.0f is a placeholder value. Weighting is not yet
-      // properly implmmented
-      // if (threadIdx.x == 510 && threadIdx.y == 0 && threadIdx.z == 0) {
-      //   printf("blockIdx.x = %d, u_px = (%f, %f)\n", blockIdx.x, u_px(0),
-      //          u_px(1));
-      // }
-      voxel_ptr->weight = 1.0f;
-      updateTexel(image_value, voxel_ptr, texel_idx, voxel_depth_m,
-                  truncation_distance_m, max_weight);
+
+      updateTexel(image_value, voxel_ptr, texel_idx, measurement_weight);
     }
   }
+  // Since the voxel_weight is read when updating the texels, it must be updated
+  // after all texels
+  voxel_ptr->weight =
+      fmin(fmax(measurement_weight, voxel_ptr->weight), max_weight);
 }
 
 void ProjectiveTexIntegrator::updateBlocks(
