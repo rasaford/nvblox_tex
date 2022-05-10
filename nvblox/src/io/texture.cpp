@@ -61,7 +61,7 @@ std::unique_ptr<TexturedMesh> packTextures(
   CHECK_EQ(patches.size(), num_patches);
 
   const int texture_patch_width = static_cast<int>(ceil(sqrt(patches.size())));
-  const int padded_patch_width = patch_width + padding;
+  const int padded_patch_width = patch_width + 2 * padding;
   const int texture_width = padded_patch_width * texture_patch_width;
 
   // allocate a texture for all patches (with padding) to fit into
@@ -77,8 +77,8 @@ std::unique_ptr<TexturedMesh> packTextures(
   for (int patch_idx = 0; patch_idx < patches.size(); ++patch_idx) {
     const Color* patch = patches[patch_idx];
     const Index2D top_left(
-        padded_patch_width * (patch_idx % texture_patch_width),
-        padded_patch_width * (patch_idx / texture_patch_width));
+        1 + padded_patch_width * (patch_idx % texture_patch_width),
+        1 + padded_patch_width * (patch_idx / texture_patch_width));
     const Vector2f top_left_uv = top_left.array().cast<float>() / texture_width;
 
     // Offset and scale patch uvs to fit in the global texture
