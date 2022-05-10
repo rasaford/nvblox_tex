@@ -2,6 +2,7 @@
 #include <cmath>
 #include <map>
 #include <memory>
+#include <opencv2/opencv.hpp>
 
 namespace nvblox {
 namespace io {
@@ -99,6 +100,23 @@ std::unique_ptr<TexturedMesh> packTextures(
       patch_colors.at<cv::Vec3b>(x, y) =
           cv::Vec3b(patch[i].b, patch[i].g, patch[i].r);
     }
+    // copy scaled up version of each patch around the actual patch, to fill the
+    // padding space around it with color value that are similar to the valid
+    // patch ones. This prevents black borders around triangles at the borders
+    // of a patch when using some kind of texture interpolation in e.g. blender
+    const Index2D bottom_right = top_left + Index2D(patch_width, patch_width);
+    const Index2D top_left_padded =
+        (top_left - Index2D(1, 1)).cwiseMax(Index2D::Zero());
+    const Index2D bottom_right_padded =
+        bottom_right +
+        Index2D(1, 1).cwiseMin(Index2D(texture_width, texture_width));
+
+    cv::Mat target_patch_padded = texture(
+        cv::Rect(cv::Point(top_left_padded[0], top_left_padded[1]),
+                 cv::Point(bottom_right_padded[0], bottom_right_padded[1])));
+
+    cv::resize(patch_colors, target_patch_padded, target_patch_padded.size(), 0,
+               0, cv::INTER_LINEAR);
     patch_colors.copyTo(texture(cv::Rect(
         cv::Point(top_left[0], top_left[1]),
         cv::Point(top_left[0] + patch_width, top_left[1] + patch_width))));
