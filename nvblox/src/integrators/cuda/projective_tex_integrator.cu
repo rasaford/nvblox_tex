@@ -99,17 +99,21 @@ void ProjectiveTexIntegrator::integrateFrame(
 }
 
 __device__ inline float computeMeasurementWeight(const TexVoxel* tex_voxel,
-                                                 const Transform T_C_L) {
+                                                 const Transform T_C_L,
+                                                 const Vector3f& voxel_center) {
   // TODO: (rasaford) compute measurement weight based on e.g.
   // - size of the projected texel in the image
   // - sharpness of the projected area in the image (to compensate motion blur)
   // - how flat on we're looking at the texel projection
   // - if the texel is on a boundary
   // - ...
-  Vector3f world_vector = tex::texDirToWorldVector(tex_voxel->dir);
-  Vector3f t_C_L = T_C_L.translation();
 
-  return fabs(world_vector.dot(t_C_L));
+  // NOTE(rasaford) the resulting world vector is always normlaized
+  Vector3f world_vector = tex::texDirToWorldVector(tex_voxel->dir);
+
+  Vector3f view_dir = (T_C_L.translation() - voxel_center).normalized();
+
+  return fabs(world_vector.dot(view_dir));
 }
 
 __device__ inline void updateTexel(const Color& color_measured,
@@ -184,7 +188,11 @@ __global__ void integrateBlocks(
 
   // Update the weight of each tex voxel once per voxel (instead of once per
   // texel) as the average of the new and old weights
-  float measurement_weight = computeMeasurementWeight(voxel_ptr, T_C_L);
+  Vector3f voxel_center = getCenterPostionFromBlockIndexAndVoxelIndex(
+      block_size, block_indices_device_ptr[blockIdx.x],
+      Index3D(threadIdx.z, threadIdx.y, threadIdx.x));
+  float measurement_weight =
+      computeMeasurementWeight(voxel_ptr, T_C_L, voxel_center);
 
   Color image_value;
   Index2D texel_idx;
