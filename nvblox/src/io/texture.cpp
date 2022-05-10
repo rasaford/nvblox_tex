@@ -85,8 +85,9 @@ std::unique_ptr<TexturedMesh> packTextures(
       Vector2f offset_uvs =
           top_left_uv + (patch_width / static_cast<float>(texture_width)) *
                             mesh.uvs[vertex_idx];
-      // flip y axis
+      // flip y axis for proper display in blender
       offset_uvs(1) = 1 - offset_uvs(1);
+
       mesh.uvs[vertex_idx] = offset_uvs;
     }
 

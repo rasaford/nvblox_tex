@@ -266,9 +266,7 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
     if (voxel->weight > 0.0f) {
       for (size_t col = 0; col < voxel->kPatchWidth; ++col) {
         for (size_t row = 0; row < voxel->kPatchWidth; ++row) {
-          EXPECT_GT((*voxel)(row, col).r, 0);
-          EXPECT_EQ((*voxel)(row, col).g, color.g);
-          EXPECT_EQ((*voxel)(row, col).b, color.b);
+          EXPECT_EQ((*voxel)(row, col), color);
         }
       }
     }

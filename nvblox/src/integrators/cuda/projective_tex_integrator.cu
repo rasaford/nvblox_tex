@@ -110,23 +110,21 @@ __device__ inline void updateTexel(const Color& color_measured,
   // TODO(alexmillane): The above.
 
   // Read CURRENT voxel values (from global GPU memory)
-  const Color& texel_color_current = (*tex_voxel)(texel_idx);
-  const float texel_weight_current = tex_voxel->weight;
+  // const Color& texel_color_current = (*tex_voxel)(texel_idx);
   // TODO: (rasaford) compute measurement weight based on e.g.
   // - size of the projected texel in the image
   // - sharpness of the projected area in the image (to compensate motion blur)
   // - how flat on we're looking at the texel projection
   // - if the texel is on a boundary
   // - ...
-  constexpr float measurement_weight = 1.0f;
-  const Color fused_color =
-      blendTwoColors(texel_color_current, texel_weight_current, color_measured,
-                     measurement_weight);
-  const float weight =
-      fmin(measurement_weight + texel_weight_current, max_weight);
+  // constexpr float measurement_weight = 1.0f;
+  // const Color fused_color =
+  //     blendTwoColors(texel_color_current, texel_weight_current,
+  //     color_measured,
+  //                    measurement_weight);
   // Write NEW voxel values (to global GPU memory)
-  (*tex_voxel)(texel_idx) = fused_color;
-  tex_voxel->weight = weight;
+  (*tex_voxel)(texel_idx) = color_measured;
+  // tex_voxel->weight = weight;
 }
 
 __global__ void integrateBlocks(
@@ -191,10 +189,11 @@ __global__ void integrateBlocks(
   }
 
   Color image_value;
+  Index2D texel_idx;
   // loop over all colors in the TexVoxel patch
   for (int row = 0; row < voxel_ptr->kPatchWidth; ++row) {
     for (int col = 0; col < voxel_ptr->kPatchWidth; ++col) {
-      const Index2D texel_idx(row, col);
+      texel_idx = Index2D(row, col);
       // Project the current texel_idx to image space. If it's outside the
       // image, go to the next texel.
       if (!projectThreadTexel(block_indices_device_ptr, camera, T_C_L,
@@ -211,6 +210,9 @@ __global__ void integrateBlocks(
         continue;
       }
       // Update the texel using the update rule for this layer type
+      // TODO: a weight of 1.0f is a placeholder value. Weighting is not yet
+      // properly implmmented
+      voxel_ptr->weight = 1.0f;
       updateTexel(image_value, voxel_ptr, texel_idx, voxel_depth_m,
                   truncation_distance_m, max_weight);
     }
