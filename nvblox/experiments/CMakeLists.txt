@@ -24,6 +24,14 @@ nvblox_experiments_common
 )
 set_target_properties(fuse_3dmatch PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
+# Tex integrator executable
+add_executable(tex_integration src/tex_integration.cpp)
+target_link_libraries(tex_integration
+nvblox_experiments_common
+)
+set_target_properties(tex_integration PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+
+
 # Python module for experiments
 set(PYTHON_EXPERIMENTS_MODULE_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/python")
 set(PYTHON_EXPERIMENTS_MODULE_DST_DIR "${CMAKE_CURRENT_BINARY_DIR}/python")

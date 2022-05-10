@@ -26,6 +26,7 @@ limitations under the License.
 #include "nvblox/integrators/esdf_integrator.h"
 #include "nvblox/integrators/projective_color_integrator.h"
 #include "nvblox/integrators/projective_tsdf_integrator.h"
+#include "nvblox/integrators/projective_tex_integrator.h"
 #include "nvblox/mesh/mesh_integrator.h"
 
 namespace nvblox {
@@ -128,6 +129,90 @@ class RgbdMapper : public MapperBase {
 
   // These queue keep track of the blocks which need to be updated on the next
   // calls to updateMeshLayer() and updateEsdfLayer() respectively.
+  Index3DSet mesh_blocks_to_update_;
+  Index3DSet esdf_blocks_to_update_;
+};
+
+/**
+ * @brief The TexMapper is a variant of the RgbdMapper class that uses a TexIntegrator in place of the ColorIntegrator
+ * 
+ */
+class TexMapper : public MapperBase {
+ public:
+  TexMapper() = delete;
+  TexMapper(float voxel_size_m, MemoryType memory_type = MemoryType::kDevice);
+  virtual ~TexMapper() {}
+
+  // Move
+  TexMapper(TexMapper&& other) = default;
+  TexMapper& operator=(TexMapper&& other) = default;
+
+  void integrateDepth(const DepthImage& depth_frame, const Transform& T_L_C,
+                      const Camera& camera);
+  void integrateColor(const ColorImage& color_frame, const Transform& T_L_C,
+                      const Camera& camera);
+
+  /// Updates the mesh blocks which require an update
+  /// @return The indices of the blocks that were updated in this call.
+  std::vector<Index3D> updateMesh();
+
+  /// Updates the Esdf blocks which require update
+  /// @return The indices of the blocks that were updated in this call.
+  std::vector<Index3D> updateEsdf();
+  std::vector<Index3D> updateEsdfSlice(float slice_input_z_min,
+                                       float slice_input_z_max,
+                                       float slice_output_z);
+
+  // Const access to layers
+  const LayerCake& layers() const { return layers_; }
+  const TsdfLayer& tsdf_layer() const { return layers_.get<TsdfLayer>(); }
+  const TexLayer& tex_layer() const { return layers_.get<TexLayer>(); }
+  const EsdfLayer& esdf_layer() const { return layers_.get<EsdfLayer>(); }
+  const MeshUVLayer& mesh_layer() const { return layers_.get<MeshUVLayer>(); }
+
+  // Non-const access to layers
+  LayerCake& layers() { return layers_; }
+  TsdfLayer& tsdf_layer() { return *layers_.getPtr<TsdfLayer>(); }
+  TexLayer& tex_layer() { return *layers_.getPtr<TexLayer>(); }
+  EsdfLayer& esdf_layer() { return *layers_.getPtr<EsdfLayer>(); }
+  MeshUVLayer& mesh_layer() { return *layers_.getPtr<MeshUVLayer>(); }
+
+  // Const access to integrators
+  const ProjectiveTsdfIntegrator& tsdf_integrator() const {
+    return tsdf_integrator_;
+  }
+  const ProjectiveTexIntegrator& tex_integrator() const {
+    return tex_integrator_;
+  }
+  const MeshUVIntegrator& mesh_integrator() const { return mesh_integrator_; }
+  const EsdfIntegrator& esdf_integrator() const { return esdf_integrator_; }
+
+  // Non-const access to integrators
+  ProjectiveTsdfIntegrator& tsdf_integrator() { return tsdf_integrator_; }
+  ProjectiveTexIntegrator& tex_integrator() { return tex_integrator_; }
+  MeshUVIntegrator& mesh_integrator() { return mesh_integrator_; }
+  EsdfIntegrator& esdf_integrator() { return esdf_integrator_; }
+
+ protected:
+  // Params
+  float voxel_size_m_;
+
+  // Behaviour params
+  enum class EsdfMode { k3D, k2D, kUnset };
+  EsdfMode esdf_mode_ = EsdfMode::kUnset;
+
+  // Map layers defined in base)
+  // For RgbdMapper class: TSDF, Color, ESDF, MeshUV
+  // LayerCake layers_;
+
+  // Integrators
+  ProjectiveTsdfIntegrator tsdf_integrator_;
+  ProjectiveTexIntegrator tex_integrator_;
+  MeshUVIntegrator mesh_integrator_;
+  EsdfIntegrator esdf_integrator_;
+
+  // These queue keep track of the blocks which need to be updated on the next
+  // calls to updateMeshUVLayer() and updateEsdfLayer() respectively.
   Index3DSet mesh_blocks_to_update_;
   Index3DSet esdf_blocks_to_update_;
 };

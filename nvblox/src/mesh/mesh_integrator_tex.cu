@@ -19,7 +19,7 @@ void MeshUVIntegrator::textureMesh(const TexLayer& tex_layer,
                                    const std::vector<Index3D>& block_indices,
                                    MeshUVLayer* mesh_layer) {
   // Default choice is GPU
-  textureMeshGPU(tex_layer, block_indices, mesh_layer);
+  textureMeshCPU(tex_layer, block_indices, mesh_layer);
 }
 
 //

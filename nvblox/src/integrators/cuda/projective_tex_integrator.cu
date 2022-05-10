@@ -357,6 +357,10 @@ void ProjectiveTexIntegrator::updateVoxelNormalDirections(
     const TsdfLayer& tsdf_layer, TexLayer* tex_layer_ptr,
     const std::vector<Index3D>& block_indices,
     const float truncation_distance_m) {
+  
+  if (block_indices.empty()) {
+    return;
+  }
   // Get the pointers for the indexed blocks from both
   // - The tsdf layer: Since all Voxels are already integrated here, we read
   // from this layer to estimate the normal direcitonA

@@ -22,9 +22,9 @@ limitations under the License.
 
 #include "nvblox/core/blox.h"
 #include "nvblox/core/layer.h"
-#include "nvblox/core/voxels.h"
 #include "nvblox/core/layer_cake.h"
 #include "nvblox/core/mapper.h"
+#include "nvblox/core/voxels.h"
 #include "nvblox/datasets/image_loader.h"
 #include "nvblox/gpu_hash/gpu_layer_view.h"
 #include "nvblox/integrators/esdf_integrator.h"
@@ -46,12 +46,12 @@ class Fuse3DMatch {
               const std::string& esdf_output_path = std::string());
 
   // Runs an experiment
-  int run();
+  virtual int run();
 
   // Set the base path pointing to the dataset.
-  void setBasePath(const std::string& base_path);
+  virtual void setBasePath(const std::string& base_path);
   // Set the sequence number within the 3D Match dataset.
-  void setSequenceNumber(int sequence_num);
+  virtual void setSequenceNumber(int sequence_num);
 
   // Set various settings.
   void setVoxelSize(float voxel_size);
@@ -61,19 +61,19 @@ class Fuse3DMatch {
   void setEsdfFrameSubsampling(int subsample);
 
   // Integrate certain layers.
-  bool integrateFrame(const int frame_number);
-  bool integrateFrames();
+  virtual bool integrateFrame(const int frame_number);
+  virtual bool integrateFrames();
 
   // Initialize the image loaders based on the current base_path and
   // sequence_num
-  void initializeImageLoaders(bool multithreaded = false);
+  virtual void initializeImageLoaders(bool multithreaded = false);
 
   // Output a pointcloud ESDF as PLY file.
-  bool outputPointcloudPly();
+  virtual bool outputPointcloudPly() const;
   // Output a file with the mesh.
-  bool outputMeshPly();
+  virtual bool outputMeshPly() const;
   // Output timings to a file
-  bool outputTimingsToFile();
+  virtual bool outputTimingsToFile() const;
 
   // Factory: From command line args
   static Fuse3DMatch createFromCommandLineArgs(int argc, char* argv[]);
@@ -107,6 +107,38 @@ class Fuse3DMatch {
   std::string timing_output_path_;
   std::string esdf_output_path_;
   std::string mesh_output_path_;
+};
+
+class TexFuse3DMatch : public Fuse3DMatch {
+  public:
+  TexFuse3DMatch() = default;
+  TexFuse3DMatch(const std::string& base_path,
+                 const std::string& timing_output_path = std::string(),
+                 const std::string& mesh_output_path = std::string(),
+                 const std::string& esdf_output_path = std::string(),
+                 const std::string& texture_output_path = std::string());
+
+  // Integrate certain layers.
+  virtual bool integrateFrame(const int frame_number) override;
+
+  void setTexFrameSubsampling(int subsample);
+
+  // Output a file with the mesh.
+  virtual bool outputMeshPly() const override;
+
+  // Factory: From command line args
+  static TexFuse3DMatch createFromCommandLineArgs(int argc, char* argv[]);
+
+  // Get the mapper (useful for experiments where we modify mapper settings)
+  TexMapper& mapper() { return mapper_; }
+
+  int tex_frame_subsampling_ = 1;
+
+  // Mapper - Contains map layers and integrators
+  TexMapper mapper_;
+
+  // Output paths
+  std::string texture_output_path_;
 };
 
 }  //  namespace experiments
