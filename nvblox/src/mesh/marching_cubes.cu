@@ -118,6 +118,9 @@ void meshCube(const PerVoxelMarchingCubesResults& marching_cubes_results,
     mesh->normals.push_back(n);
     mesh->normals.push_back(n);
     mesh->normals.push_back(n);
+    mesh->voxels.push_back(marching_cubes_results.voxel_index);
+    mesh->voxels.push_back(marching_cubes_results.voxel_index);
+    mesh->voxels.push_back(marching_cubes_results.voxel_index);
     next_index += 3;
     table_col += 3;
   }
@@ -181,6 +184,9 @@ __device__ void calculateVertices(
     mesh->normals[next_index] = n;
     mesh->normals[next_index + 1] = n;
     mesh->normals[next_index + 2] = n;
+    mesh->voxels[next_index] = marching_cubes_results.voxel_index;
+    mesh->voxels[next_index + 1] = marching_cubes_results.voxel_index;
+    mesh->voxels[next_index + 2] = marching_cubes_results.voxel_index;
     next_index += 3;
     table_col += 3;
   }

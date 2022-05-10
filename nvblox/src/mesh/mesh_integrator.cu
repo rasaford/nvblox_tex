@@ -142,6 +142,7 @@ __global__ void meshBlocksCalculateTableIndicesKernel(
   const Vector3f half_voxel(0.5f, 0.5f, 0.5f);
 
   marching_cubes::PerVoxelMarchingCubesResults marching_cubes_results_local;
+  marching_cubes_results_local.voxel_index = Index3D(threadIdx.z, threadIdx.y, threadIdx.x);
 
   // This for loop allows us to have fewer threadblocks than there are
   // blocks in this computation. We assume the threadblock size is constant

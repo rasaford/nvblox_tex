@@ -264,6 +264,8 @@ Vector2f MeshUVIntegrator::projectToTexPatch(
   // NOTE(rasaford) since the directions encoded in TexVoxel::Dir are aligned
   // with the major coordinate axes, we do not need to do a complicated
   // projection here but can just take the respective coordinates directly
+  // const Vector3f texel_coords = (vertex);  // / voxel_size;
+  // TODO: fix this
   const Vector3f texel_coords = (vertex - voxel_center) / voxel_size;
   Vector2f uv;
   switch (direction) {
@@ -282,11 +284,11 @@ Vector2f MeshUVIntegrator::projectToTexPatch(
     default:
       uv << -1.0f, -1.0f;
   }
-  return uv + Vector2f(0.5f, 0.5f);
+  return uv;
 }
 
 Color MeshUVIntegrator::getDirColor(const TexVoxel::Dir dir) const {
-  switch(dir) {
+  switch (dir) {
     case TexVoxel::Dir::X_PLUS:
     case TexVoxel::Dir::X_MINUS:
       return Color::Red();
@@ -296,6 +298,8 @@ Color MeshUVIntegrator::getDirColor(const TexVoxel::Dir dir) const {
     case TexVoxel::Dir::Z_PLUS:
     case TexVoxel::Dir::Z_MINUS:
       return Color::Blue();
+    default:
+      return Color::Gray();
   }
 }
 
@@ -320,34 +324,34 @@ void MeshUVIntegrator::textureMeshCPU(const TexLayer& tex_layer,
 
     for (int i = 0; i < block->vertices.size(); i++) {
       const Vector3f& vertex = block->vertices[i];
+      const Index3D& voxel_idx = block->voxels[i];
       const TexVoxel* tex_voxel;
       // not all blocks in a layer might be allocated. So we check if a voxel
       // exists at the vertex position.
       if (getVoxelAtPosition<TexVoxel>(tex_layer, vertex, &tex_voxel)) {
-        Index3D tex_block_index, tex_voxel_index;
-        getBlockAndVoxelIndexFromPositionInLayer(
-            tex_layer.block_size(), vertex, &tex_block_index, &tex_voxel_index);
+        // Index3D tex_block_index, tex_voxel_index;
+        // getBlockAndVoxelIndexFromPositionInLayer(
+        //     tex_layer.block_size(), vertex, &tex_block_index,
+        //     &tex_voxel_index);
         const Vector3f voxel_center =
             getCenterPostionFromBlockIndexAndVoxelIndex(
-                tex_layer.block_size(), tex_block_index, tex_voxel_index);
+                tex_layer.block_size(), block_idx, voxel_idx);
 
         // Add the tex_voxel's colors as a patch to the MeshBlockUV.
         // NOTE(rasaford) Since getVoxelAtPosition() requires a const pointer,
         // we have to do this ugly const_cast here. In reality the
         // TexVoxel*->colors attribute is non-const anyways.
         const int patch_index = block->addPatch(
-            tex_block_index, tex_voxel_index, tex_voxel->kPatchWidth,
+            block_idx, voxel_idx, tex_voxel->kPatchWidth,
             tex_voxel->kPatchWidth, const_cast<TexVoxel*>(tex_voxel)->colors);
 
         const Vector2f patch_uv = projectToTexPatch(
             vertex, voxel_center, tex_layer.voxel_size(), tex_voxel->dir);
         const Vector2f patch_uv_px = TexVoxel::kPatchWidth * patch_uv;
-        Color interpolate;
-        interpolation::interpolate2DLinear<Color>(
-            tex_voxel->colors, patch_uv_px, TexVoxel::kPatchWidth,
-            TexVoxel::kPatchWidth, &interpolate);
-
-
+        // Color interpolate;
+        // interpolation::interpolate2DLinear<Color>(
+        //     tex_voxel->colors, patch_uv_px, TexVoxel::kPatchWidth,
+        //     TexVoxel::kPatchWidth, &interpolate);
 
         // block->colors[i] = interpolate;
         block->colors[i] = getDirColor(tex_voxel->dir);

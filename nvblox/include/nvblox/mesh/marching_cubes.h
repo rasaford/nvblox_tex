@@ -45,11 +45,13 @@ struct PerVoxelMarchingCubesResults {
   // contribution of marching cubes algorithm.
   uint8_t marching_cubes_table_index = 0;
   // At the end of marching cubes, vertices calculated for this and other voxels
-  // in this MeshBlock are stored in a single vector. This member indicates where
-  // in this vertex vector the vertices associated with this voxel begin. It is
-  // calculated through an exclusive prefix sum of the numbers of vertices
+  // in this MeshBlock are stored in a single vector. This member indicates
+  // where in this vertex vector the vertices associated with this voxel begin.
+  // It is calculated through an exclusive prefix sum of the numbers of vertices
   // in each voxel of this MeshBlock.
   int vertex_vector_start_index;
+  // Index of the corresponding voxel
+  Index3D voxel_index;
 };
 
 // Performs the marching cubes algorithm to generate a mesh layer from a TSDF.

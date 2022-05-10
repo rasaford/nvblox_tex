@@ -46,6 +46,10 @@ struct MeshBlock {
   unified_vector<Color> colors;
   unified_vector<float> intensities;
   unified_vector<int> triangles;
+  // for each vertex (index given by the vertices vector) voxels defines the
+  // lindex of the voxel that generated this vertex. This information is
+  // required for voxel based texturing
+  unified_vector<Index3D> voxels;
 
   void clear();
 
@@ -124,6 +128,7 @@ struct CudaMeshBlock {
   Vector3f* normals;
   int* triangles;
   Color* colors;
+  Index3D* voxels;
   int size;
 };
 

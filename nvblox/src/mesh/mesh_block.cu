@@ -29,18 +29,21 @@ void MeshBlock::clear() {
   normals.resize(0);
   triangles.resize(0);
   colors.resize(0);
+  voxels.resize(0);
 }
 
 void MeshBlock::resizeToNumberOfVertices(size_t new_size) {
   vertices.resize(new_size);
   normals.resize(new_size);
   triangles.resize(new_size);
+  voxels.resize(new_size);
 }
 
 void MeshBlock::reserveNumberOfVertices(size_t new_capacity) {
   vertices.reserve(new_capacity);
   normals.reserve(new_capacity);
   triangles.reserve(new_capacity);
+  voxels.reserve(new_capacity);
 }
 
 MeshBlock::Ptr MeshBlock::allocate(MemoryType memory_type) {
@@ -160,6 +163,7 @@ CudaMeshBlock::CudaMeshBlock(MeshBlock* block) {
   normals = block->normals.data();
   triangles = block->triangles.data();
   colors = block->colors.data();
+  voxels = block->voxels.data();
   size = block->vertices.size();
 }
 

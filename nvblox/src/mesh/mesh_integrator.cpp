@@ -156,6 +156,8 @@ void Mesher<CudaMeshBlockType, MeshBlockType>::getTriangleCandidatesInBlock(
             block_size, block_index, voxel_index);
 
         marching_cubes::PerVoxelMarchingCubesResults neighbors;
+        neighbors.voxel_index = voxel_index;
+
         // Figure out if this voxel is actually a triangle candidate.
         if (getTriangleCandidatesAroundVoxel(block, neighbor_blocks,
                                              voxel_index, voxel_position,

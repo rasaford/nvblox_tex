@@ -17,6 +17,7 @@ limitations under the License.
 
 #include "nvblox/core/common_names.h"
 #include "nvblox/core/layer.h"
+#include "nvblox/core/types.h"
 #include "nvblox/mesh/marching_cubes.h"
 #include "nvblox/mesh/mesh_block.h"
 
