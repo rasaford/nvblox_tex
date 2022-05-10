@@ -194,24 +194,23 @@ __global__ void integrateBlocks(
   for (int row = 0; row < voxel_ptr->kPatchWidth; ++row) {
     for (int col = 0; col < voxel_ptr->kPatchWidth; ++col) {
       texel_idx = Index2D(row, col);
+      image_value = Color::Black();
       // Project the current texel_idx to image space. If it's outside the
       // image, go to the next texel.
       if (!projectThreadTexel(block_indices_device_ptr, camera, T_C_L,
                               block_size, texel_idx, voxel_ptr->dir, &u_px,
-                              &voxel_depth_m)) {
+                              &voxel_depth_m))
         continue;
-      }
-      // printf("updating color for block (%d, %d, %d)", threadIdx.z,
-      // threadIdx.y,
-      //        threadIdx.x);
-      // get image color at current u_px by linear interpolation
+
       if (!interpolation::interpolate2DLinear<Color>(
-              color_image, u_px, color_rows, color_cols, &image_value)) {
+              color_image, u_px, color_rows, color_cols, &image_value))
         continue;
-      }
-      // Update the texel using the update rule for this layer type
       // TODO: a weight of 1.0f is a placeholder value. Weighting is not yet
       // properly implmmented
+      // if (threadIdx.x == 510 && threadIdx.y == 0 && threadIdx.z == 0) {
+      //   printf("blockIdx.x = %d, u_px = (%f, %f)\n", blockIdx.x, u_px(0),
+      //          u_px(1));
+      // }
       voxel_ptr->weight = 1.0f;
       updateTexel(image_value, voxel_ptr, texel_idx, voxel_depth_m,
                   truncation_distance_m, max_weight);
@@ -357,7 +356,6 @@ void ProjectiveTexIntegrator::updateVoxelNormalDirections(
     const TsdfLayer& tsdf_layer, TexLayer* tex_layer_ptr,
     const std::vector<Index3D>& block_indices,
     const float truncation_distance_m) {
-  
   if (block_indices.empty()) {
     return;
   }

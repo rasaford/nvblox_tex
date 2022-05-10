@@ -96,8 +96,10 @@ Vector3f getCenterPostionFromBlockIndexAndVoxelIndex(
 Vector2f getTexelCoordsfromIdx(const Index2D& pixel_index,
                                const int patch_width, const float voxel_size) {
   const float texel_size = voxel_size / patch_width;
+  const float half_patch_width = 0.5f * patch_width;
   return texel_size *
-         (pixel_index.cast<float>() / patch_width - Vector2f(0.5f, 0.5f));
+         (pixel_index.cast<float>() -
+          Vector2f(half_patch_width, half_patch_width) + Vector2f(0.5f, 0.5f));
 }
 
 Vector3f getCenterPositionForTexel(const float block_size,
@@ -112,7 +114,7 @@ Vector3f getCenterPositionForTexel(const float block_size,
       getTexelCoordsfromIdx(pixel_index, TexVoxel::kPatchWidth, voxel_size);
   // scale texel coordinates such that each pixel is mapped to it's center in
   // texel space
-  texel_coords *= TexVoxel::kPatchWidth / (TexVoxel::kPatchWidth + 1);
+  // texel_coords *= TexVoxel::kPatchWidth / (TexVoxel::kPatchWidth + 1);
   Vector3f pos;
 
   // TODO: (rasaford) is fallthrough correct here?

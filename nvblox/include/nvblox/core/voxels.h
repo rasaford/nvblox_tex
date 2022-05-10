@@ -109,7 +109,8 @@ class TexVoxelTemplate {
 // Each TexVoxel is a 2d grid of colors for each voxel
 // NOTE(rasaford) To actually be able to use this type, it needs to be defined
 // in voxels.cpp (above its only the declaration).
-typedef TexVoxelTemplate<Color, 4> TexVoxel;
+typedef TexVoxelTemplate<Color, 8> TexVoxel;
+
 
 struct FreespaceVoxel {
   bool free = true;
