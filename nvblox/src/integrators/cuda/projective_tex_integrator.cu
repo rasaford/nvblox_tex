@@ -399,10 +399,12 @@ void ProjectiveTexIntegrator::updateVoxelNormalDirections(
 
   // View of BlockIndices to TsdfBlock potiners. We need this to do global
   // position lookups for all voxels.
-  const GPULayerView<TsdfBlock> gpu_layer = tsdf_layer.getGpuLayerView();
+  const GPULayerView<TsdfBlock> tsdf_layer_view = tsdf_layer.getGpuLayerView();
+  const GPULayerView<TexBlock> tex_layer_view =
+      tex_layer_ptr->getGpuLayerView();
 
   tex::updateTexVoxelDirectionsGPU(
-      gpu_layer, update_normals_tex_block_prts_device_,
+      tsdf_layer_view, tex_layer_view, update_normals_tex_block_prts_device_,
       update_normals_block_indices_device_, num_blocks, integration_stream_,
       tsdf_layer.block_size(), tsdf_layer.voxel_size());
 }

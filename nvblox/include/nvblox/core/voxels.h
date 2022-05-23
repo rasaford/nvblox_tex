@@ -68,6 +68,12 @@ class TexVoxelTemplate {
     return dir != Dir::NONE;
   }
 
+  __host__ __device__ inline void updateDir(const Dir dir, const float dir_weight) {
+    this->dir = dir;
+    this->dir_weight = dir_weight;
+    this->weight = 0.f;
+  }
+
   // Access
   __host__ __device__ inline ElementType operator()(const int row_idx,
                                                     const int col_idx) const {
@@ -98,11 +104,17 @@ class TexVoxelTemplate {
   // using the functionality in image.h, since we want to use the absolute
   // minimum amount of memory for each TexVoxel.
   Color colors[kPatchWidth * kPatchWidth];
-  // how confident we are in this observation
-  float weight = 0.0;
+  // how confident we are in the colors for this observation
+  float weight = 0.;
+
   // any of six asis aligned directions the 2d texture plane is facing in 3d
   // space
   Dir dir = Dir::NONE;
+  // how confident we are in the direction estimate for this observation
+  float dir_weight = 0.;
+
+  // static parameter 
+  static constexpr float DIR_THRESHOLD = 0.9f;
 };
 
 // For convenience we define this non-templated version of TexVoxel.
