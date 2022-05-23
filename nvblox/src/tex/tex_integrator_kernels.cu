@@ -185,18 +185,18 @@ __global__ void setTexVoxelDirsfromTsdfGradient(
 __device__ bool computeDirHistogram(
     const Index3DDeviceHashMapType<TexBlock>& gpu_hash_index_to_ptr,
     const Vector3f& position, const float block_size, const float voxel_size,
-    Vector7f& histogram) {
+    Vector7f& weights, Vector7i& frequencies) {
   bool valid = true;
 
   // clang-format off
   TexVoxel *voxel;
-  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position                                 , block_size, &voxel)) histogram[static_cast<int>(voxel->dir)] += voxel->dir_weight;
-  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position + Vector3f(voxel_size, 0.f, 0.f), block_size, &voxel)) histogram[static_cast<int>(voxel->dir)] += voxel->dir_weight;
-  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position + Vector3f(0.f, voxel_size, 0.f), block_size, &voxel)) histogram[static_cast<int>(voxel->dir)] += voxel->dir_weight;
-  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position + Vector3f(0.f, 0.f, voxel_size), block_size, &voxel)) histogram[static_cast<int>(voxel->dir)] += voxel->dir_weight;
-  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position - Vector3f(voxel_size, 0.f, 0.f), block_size, &voxel)) histogram[static_cast<int>(voxel->dir)] += voxel->dir_weight;
-  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position - Vector3f(0.f, voxel_size, 0.f), block_size, &voxel)) histogram[static_cast<int>(voxel->dir)] += voxel->dir_weight;
-  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position - Vector3f(0.f, 0.f, voxel_size), block_size, &voxel)) histogram[static_cast<int>(voxel->dir)] += voxel->dir_weight;
+  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position                                 , block_size, &voxel)) { const auto idx = static_cast<int>(voxel->dir); frequencies[idx]++; weights[idx] += voxel->dir_weight; }
+  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position + Vector3f(voxel_size, 0.f, 0.f), block_size, &voxel)) { const auto idx = static_cast<int>(voxel->dir); frequencies[idx]++; weights[idx] += voxel->dir_weight; }
+  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position + Vector3f(0.f, voxel_size, 0.f), block_size, &voxel)) { const auto idx = static_cast<int>(voxel->dir); frequencies[idx]++; weights[idx] += voxel->dir_weight; }
+  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position + Vector3f(0.f, 0.f, voxel_size), block_size, &voxel)) { const auto idx = static_cast<int>(voxel->dir); frequencies[idx]++; weights[idx] += voxel->dir_weight; }
+  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position - Vector3f(voxel_size, 0.f, 0.f), block_size, &voxel)) { const auto idx = static_cast<int>(voxel->dir); frequencies[idx]++; weights[idx] += voxel->dir_weight; }
+  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position - Vector3f(0.f, voxel_size, 0.f), block_size, &voxel)) { const auto idx = static_cast<int>(voxel->dir); frequencies[idx]++; weights[idx] += voxel->dir_weight; }
+  if (valid &= getVoxelAtPosition<TexVoxel>(gpu_hash_index_to_ptr, position - Vector3f(0.f, 0.f, voxel_size), block_size, &voxel)) { const auto idx = static_cast<int>(voxel->dir); frequencies[idx]++; weights[idx] += voxel->dir_weight; }
   // clang-format on
   return valid;
 }
@@ -216,11 +216,11 @@ __device__ inline int linearizedThreadVoxelIdx() {
   // clang-format on
 }
 
-__global__ void smoothTexVoxelDirections(
+__global__ void majorityVoteTexVoxelDirs(
     const Index3DDeviceHashMapType<TexBlock> gpu_hash_index_to_ptr,
     TexBlock** tex_block_ptrs, const Index3D* block_indices,
-    const float block_size, const float voxel_size,
-    TexVoxel::Dir* smooth_dirs) {
+    const float block_size, const float voxel_size, TexVoxel::Dir* smooth_dirs,
+    float* smooth_weights) {
   // Get the Voxels we'll check in this thread
   const TexBlock* tex_block = tex_block_ptrs[blockIdx.x];
   const Index3D& block_index = block_indices[blockIdx.x];
@@ -231,49 +231,60 @@ __global__ void smoothTexVoxelDirections(
   Vector3f position = getCenterPostionFromBlockIndexAndVoxelIndex(
       block_size, block_index, voxel_index);
 
-  Vector7f histogram = Vector7f::Zero();
-  const bool valid_hist = computeDirHistogram(
-      gpu_hash_index_to_ptr, position, block_size, voxel_size, histogram);
+  Vector7f weights = Vector7f::Zero();
+  Vector7i frequencies = Vector7i::Zero();
+  const bool valid_hist =
+      computeDirHistogram(gpu_hash_index_to_ptr, position, block_size,
+                          voxel_size, weights, frequencies);
 
   // write current dir to smoothed output
   const int linear_voxel_idx = linearizedThreadVoxelIdx<TexBlock>();
   smooth_dirs[linear_voxel_idx] = tex_voxel->dir;
+  smooth_weights[linear_voxel_idx] = tex_voxel->dir_weight;
 
   if (!valid_hist) return;
 
-  // find most frequent and second most frequent entry of the histogram
+  // find highest weight and second highest to determine if we overwrite the
+  // TexVoxel direction.
   // TODO(rasaford) this is a very inefficient way to do an array partition.
   // Replace this with a better impelmentation
-  int max_idx = 0, second_idx = 0;
-  float max = 0.f, second = 0.f;
+  int max_idx = -1, second_idx = -1;
+  float max = -1.f, second = -1.f;
   for (int i = 0; i < 7; ++i) {
-    if (histogram[i] > max) {
+    if (weights[i] > max) {
       max_idx = i;
-      max = histogram[i];
+      max = weights[i];
     }
   }
   for (int i = 0; i < 7; ++i) {
-    if (histogram[i] < max) {
+    if (weights[i] < max && weights[i] > second) {
       second_idx = i;
-      second = histogram[i];
+      second = weights[i];
     }
   }
 
-  if (0.5f * max > second) {
+  // if the most common direction is  as likely as the second most common
+  // one, we update the current voxels direction to be the most common one
+  constexpr float DIR_UPDATE_CONFIDENCE = .5f;
+  if (DIR_UPDATE_CONFIDENCE * max > second && max > 0 && second > 0) {
     smooth_dirs[linear_voxel_idx] = static_cast<TexVoxel::Dir>(max_idx);
+    smooth_weights[linear_voxel_idx] = max / frequencies[max_idx];
   }
 }
 
 __global__ void setTexVoxelDirs(const TexVoxel::Dir* dirs,
+                                const float* smooth_weights,
                                 TexBlock** tex_block_ptrs) {
   // Get the Voxel we'll check in this thread
   TexBlock* tex_block = tex_block_ptrs[blockIdx.x];
+  Index3D voxel_index = Index3D(threadIdx.z, threadIdx.y, threadIdx.x);
   TexVoxel* tex_voxel =
-      &(tex_block->voxels[threadIdx.z][threadIdx.y][threadIdx.x]);
+      &(tex_block->voxels[voxel_index[0]][voxel_index[1]][voxel_index[2]]);
 
-  TexVoxel::Dir smooth_dir = dirs[linearizedThreadVoxelIdx<TexBlock>()];
+  const int linear_idx = linearizedThreadVoxelIdx<TexBlock>();
+  const TexVoxel::Dir smooth_dir = dirs[linear_idx];
   if (tex_voxel->dir != smooth_dir) {
-    tex_voxel->updateDir(smooth_dir, 1.f);
+    tex_voxel->updateDir(smooth_dir, smooth_weights[linear_idx]);
   }
 }
 
@@ -308,24 +319,37 @@ void updateTexVoxelDirectionsGPU(
   checkCudaErrors(cudaStreamSynchronize(stream));
   checkCudaErrors(cudaPeekAtLastError());
 
-  // device_vector<TexVoxel::Dir> smooth_dirs;
-  // constexpr int voxels_per_block = TexBlock::kVoxelsPerSide *
-  //                                  TexBlock::kVoxelsPerSide *
-  //                                  TexBlock::kVoxelsPerSide;
-  // smooth_dirs.reserve(block_indices_device.size() * voxels_per_block);
+  constexpr int voxels_per_block = TexBlock::kVoxelsPerSide *
+                                   TexBlock::kVoxelsPerSide *
+                                   TexBlock::kVoxelsPerSide;
+  device_vector<TexVoxel::Dir> smooth_dirs;
+  smooth_dirs.reserve(block_indices_device.size() * voxels_per_block);
+  device_vector<float> smooth_weights;
+  smooth_weights.reserve(block_indices_device.size() * voxels_per_block);
 
   // clang-format off
-  // smoothTexVoxelDirections<<<num_thread_blocks, kThreadsPerBlock, 0, stream>>>(
-  //     tex_layer_view.getHash().impl_,
-  //     tex_block_ptrs.data(),
-  //     block_indices_device.data(),
-  //     block_size,
-  //     voxel_size,
-  //     smooth_dirs.data()
-  // );
-  // // clang-format on
-  // checkCudaErrors(cudaStreamSynchronize(stream));
-  // checkCudaErrors(cudaPeekAtLastError());
+  majorityVoteTexVoxelDirs<<<num_thread_blocks, kThreadsPerBlock, 0, stream>>>(
+      tex_layer_view.getHash().impl_,
+      tex_block_ptrs.data(),
+      block_indices_device.data(),
+      block_size,
+      voxel_size,
+      smooth_dirs.data(),
+      smooth_weights.data()
+  );
+  // clang-format on
+  checkCudaErrors(cudaStreamSynchronize(stream));
+  checkCudaErrors(cudaPeekAtLastError());
+
+  // clang-format off
+  setTexVoxelDirs<<<num_thread_blocks, kThreadsPerBlock, 0, stream>>>(
+    smooth_dirs.data(), 
+    smooth_weights.data(),
+    tex_block_ptrs.data()
+  );
+  // clang-format on
+  checkCudaErrors(cudaStreamSynchronize(stream));
+  checkCudaErrors(cudaPeekAtLastError());
 }
 
 }  // namespace tex

@@ -181,7 +181,7 @@ TEST_F(DepthImageTest, InterpolationGPU) {
                                         &success_flags_x);
   std::vector<float> values_y(kNumTests, 1.0f);
   std::vector<int> success_flags_y(kNumTests, 0);
-  test_utils::linearInterpolateImageGpu(image_y, u_px_vec, &values_y,
+  test_utils::terpolateImageGpu(image_y, u_px_vec, &values_y,
                                         &success_flags_y);
 
   for (int i = 0; i < kNumTests; i++) {

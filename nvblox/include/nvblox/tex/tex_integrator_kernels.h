@@ -10,6 +10,7 @@ namespace nvblox {
 namespace tex {
 
 typedef Eigen::Matrix<float, 7, 1> Vector7f;
+typedef Eigen::Matrix<int, 7, 1> Vector7i;
 
 void updateTexVoxelDirectionsGPU(
     const GPULayerView<TsdfBlock>& tsdf_layer_view,
