@@ -98,9 +98,31 @@ void ProjectiveTexIntegrator::integrateFrame(
   }
 }
 
-__device__ inline float computeMeasurementWeight(const TexVoxel* tex_voxel,
-                                                 const Transform T_C_L,
-                                                 const Vector3f& voxel_center) {
+template <typename ElementType>
+__device__ inline bool imageGradient(const ElementType* image, const int rows,
+                                     const int cols, const Vector2f& u_px,
+                                     const float dx, Vector2f* gradient) {
+  ElementType x_p, x_m, y_p, y_m;
+  bool valid = true;
+  // clang-format off
+  valid &= interpolation::interpolate2DClosest<ElementType>(image, u_px + Vector2f(dx, 0.f), rows, cols, &x_p);
+  valid &= interpolation::interpolate2DClosest<ElementType>(image, u_px + Vector2f(0.f, dx), rows, cols, &y_p);
+  valid &= interpolation::interpolate2DClosest<ElementType>(image, u_px - Vector2f(dx, 0.f), rows, cols, &x_m);
+  valid &= interpolation::interpolate2DClosest<ElementType>(image, u_px - Vector2f(0.f, dx), rows, cols, &y_m);
+  // clang-format on
+
+  if (!valid) return false;
+
+  (*gradient) << (x_p - x_m) / (2 * dx),
+      (y_p - y_m) / (2 * dx);
+  return true;
+}
+
+__device__ inline float computeMeasurementWeight(
+    const TexVoxel* tex_voxel, const Transform T_C_L,
+    const Vector3f& voxel_center, const float* depth_image,
+    const int depth_rows, const int depth_cols, const Vector2f& u_px_center,
+    const float u_px_depth, const int depth_subsampling_factor) {
   // TODO: (rasaford) compute measurement weight based on e.g.
   // - size of the projected texel in the image
   // - sharpness of the projected area in the image (to compensate motion blur)
@@ -109,11 +131,21 @@ __device__ inline float computeMeasurementWeight(const TexVoxel* tex_voxel,
   // - ...
 
   // NOTE(rasaford) the resulting world vector is always normlaized
-  Vector3f world_vector = tex::texDirToWorldVector(tex_voxel->dir);
+  const Vector3f world_vector = tex::texDirToWorldVector(tex_voxel->dir);
+  const Vector3f view_dir = (T_C_L.translation() - voxel_center).normalized();
+  const float view_dir_weight = fabs(world_vector.dot(view_dir));  // in [0, 1]
 
-  Vector3f view_dir = (T_C_L.translation() - voxel_center).normalized();
+  // wiegh down voxels at depth discontinuities
+  Vector2f gradient;
+  float gradient_weight = 0;
+  if (imageGradient<float>(
+          depth_image, depth_rows, depth_cols,
+          u_px_center / static_cast<float>(depth_subsampling_factor), 10.f,
+          &gradient)) {
+    gradient_weight = -10 * gradient.norm();
+  }
 
-  return fabs(world_vector.dot(view_dir));
+  return fmax(view_dir_weight + gradient_weight, 0);
 }
 
 __device__ inline void updateTexel(const Color& color_measured,
@@ -157,8 +189,7 @@ __global__ void integrateBlocks(
 
   // Get - the depth of the voxel center
   //     - Also check if the voxel projects inside the image
-  const Eigen::Vector2f u_px_depth =
-      u_px / static_cast<float>(depth_subsample_factor);
+  const Vector2f u_px_depth = u_px / static_cast<float>(depth_subsample_factor);
   float surface_depth_m;
   if (!interpolation::interpolate2DLinear<float>(
           depth_image, u_px_depth, depth_rows, depth_cols, &surface_depth_m)) {
@@ -179,6 +210,7 @@ __global__ void integrateBlocks(
   // block (z-major).
   TexVoxel* voxel_ptr = &(block_device_ptrs[blockIdx.x]
                               ->voxels[threadIdx.z][threadIdx.y][threadIdx.x]);
+  Index3D voxel_idx = Index3D(threadIdx.z, threadIdx.y, threadIdx.x);
 
   // NOTE(rasaford): If the current voxel has not been assigned a texture plane
   // direction, it must not be on the truncation band --> skip it
@@ -189,10 +221,10 @@ __global__ void integrateBlocks(
   // Update the weight of each tex voxel once per voxel (instead of once per
   // texel) as the average of the new and old weights
   Vector3f voxel_center = getCenterPostionFromBlockIndexAndVoxelIndex(
-      block_size, block_indices_device_ptr[blockIdx.x],
-      Index3D(threadIdx.z, threadIdx.y, threadIdx.x));
-  float measurement_weight =
-      computeMeasurementWeight(voxel_ptr, T_C_L, voxel_center);
+      block_size, block_indices_device_ptr[blockIdx.x], voxel_idx);
+  float measurement_weight = computeMeasurementWeight(
+      voxel_ptr, T_C_L, voxel_center, depth_image, depth_rows, depth_cols, u_px,
+      surface_depth_m, depth_subsample_factor);
 
   Color image_value;
   Index2D texel_idx;
