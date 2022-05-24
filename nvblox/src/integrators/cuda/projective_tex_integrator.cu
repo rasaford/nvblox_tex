@@ -98,31 +98,37 @@ void ProjectiveTexIntegrator::integrateFrame(
   }
 }
 
-template <typename ElementType>
-__device__ inline bool imageGradient(const ElementType* image, const int rows,
-                                     const int cols, const Vector2f& u_px,
-                                     const float dx, Vector2f* gradient) {
-  ElementType x_p, x_m, y_p, y_m;
-  bool valid = true;
-  // clang-format off
-  valid &= interpolation::interpolate2DClosest<ElementType>(image, u_px + Vector2f(dx, 0.f), rows, cols, &x_p);
-  valid &= interpolation::interpolate2DClosest<ElementType>(image, u_px + Vector2f(0.f, dx), rows, cols, &y_p);
-  valid &= interpolation::interpolate2DClosest<ElementType>(image, u_px - Vector2f(dx, 0.f), rows, cols, &x_m);
-  valid &= interpolation::interpolate2DClosest<ElementType>(image, u_px - Vector2f(0.f, dx), rows, cols, &y_m);
-  // clang-format on
+// template <typename ElementType>
+// __device__ inline bool imageGradient(const ElementType* image, const int
+// rows,
+//                                      const int cols, const Vector2f& u_px,
+//                                      const float dx, Vector2f* gradient) {
+//   ElementType x_p, x_m, y_p, y_m;
+//   bool valid = true;
+//   // clang-format off
+//   valid &= interpolation::interpolate2DClosest<ElementType>(image, u_px +
+//   Vector2f(dx, 0.f), rows, cols, &x_p); valid &=
+//   interpolation::interpolate2DClosest<ElementType>(image, u_px +
+//   Vector2f(0.f, dx), rows, cols, &y_p); valid &=
+//   interpolation::interpolate2DClosest<ElementType>(image, u_px - Vector2f(dx,
+//   0.f), rows, cols, &x_m); valid &=
+//   interpolation::interpolate2DClosest<ElementType>(image, u_px -
+//   Vector2f(0.f, dx), rows, cols, &y_m);
+//   // clang-format on
 
-  if (!valid) return false;
+//   if (!valid) return false;
 
-  (*gradient) << (x_p - x_m) / (2 * dx),
-      (y_p - y_m) / (2 * dx);
-  return true;
-}
+//   (*gradient) << (x_p - x_m) / (2 * dx),
+//       (y_p - y_m) / (2 * dx);
+//   return true;
+// }
 
-__device__ inline float computeMeasurementWeight(
-    const TexVoxel* tex_voxel, const Transform T_C_L,
-    const Vector3f& voxel_center, const float* depth_image,
-    const int depth_rows, const int depth_cols, const Vector2f& u_px_center,
-    const float u_px_depth, const int depth_subsampling_factor) {
+__device__ inline float computeMeasurementWeight(const TexVoxel* tex_voxel,
+                                                 const Transform T_C_L,
+                                                 const Vector3f& voxel_center,
+                                                 const Vector2f u_px,
+                                                 const float u_px_depth,
+                                                 const TexVoxel::Dir dir) {
   // TODO: (rasaford) compute measurement weight based on e.g.
   // - size of the projected texel in the image
   // - sharpness of the projected area in the image (to compensate motion blur)
@@ -131,21 +137,60 @@ __device__ inline float computeMeasurementWeight(
   // - ...
 
   // NOTE(rasaford) the resulting world vector is always normlaized
-  const Vector3f world_vector = tex::texDirToWorldVector(tex_voxel->dir);
-  const Vector3f view_dir = (T_C_L.translation() - voxel_center).normalized();
-  const float view_dir_weight = fabs(world_vector.dot(view_dir));  // in [0, 1]
+  // const Vector3f world_vector = tex::texDirToWorldVector(tex_voxel->dir);
+  // const float view_dir_weight = fabs(world_vector.dot(view_dir));  // in [0,
+  // 1]
 
-  // wiegh down voxels at depth discontinuities
-  Vector2f gradient;
-  float gradient_weight = 0;
-  if (imageGradient<float>(
-          depth_image, depth_rows, depth_cols,
-          u_px_center / static_cast<float>(depth_subsampling_factor), 10.f,
-          &gradient)) {
-    gradient_weight = -10 * gradient.norm();
-  }
+  // Area based weighting
+  // Minimum depth of scanning (m). I.e. closest we will get to a point.
+  constexpr float MIN_DEPTH = .5f;
+  // Smoothing for the deviation in normal direction we accept for w_area
+  constexpr float SIMGA_AREA = 1.f;
+  // Smoothing for the deviation in normal direction we accept for w_angle
+  constexpr float SIMGA_ANGLE = .1f;
+  constexpr float MIN_W_AREA = .05f;   // GAMAM_AREA in TextureFusion Paper
+  constexpr float MIN_W_ANGLE = .05f;  // GAMAM_ANGLE in TextureFusion Paper
 
-  return fmax(view_dir_weight + gradient_weight, 0);
+  Vector3f view_dir = (T_C_L.translation() - voxel_center).normalized();
+  float normal_align = fabs(tex::texDirToWorldVector(dir).dot(-view_dir)); // in [0, 1]
+  float depth_clipped = fmax(u_px_depth, MIN_DEPTH);
+  // rho is the product of the alignment of the view direction with the surface
+  // normal at the given voxel and the clipped inverse depth. I.e. voxels that
+  // we look at head on and are close to the camera are preferred
+  float rho =
+      powf(MIN_DEPTH / depth_clipped, 2.f) * normal_align;  // in [-1, 1]
+
+  // w_area is a bell curve centered at 1 with rho as a parameter. So the closer
+  // rho is to one, the more weight we assign it. SIGMA_AREA controlls the
+  // sharpness of the falloff at around the mean 1.
+  // clang-format off
+  float w_area = fmax(
+      expf(-powf((1 - rho) / SIMGA_AREA, 2.f)), 
+      MIN_W_AREA
+  ); // in [MIN_W_AREA, 1]
+  // clang-format on
+
+  // View angle based weighting
+  // clang-format off
+  float w_angle = fmax(
+    expf(-powf((1 - normal_align) / SIMGA_ANGLE, 2.f)),
+    MIN_W_ANGLE
+  ); // in [MIN_W_ANGLE, 1]
+  // clang-format on
+
+  // printf("%f, %f\n", rho, normal_align);
+
+  // // wiegh down voxels at depth discontinuities
+  // Vector2f gradient;
+  // float gradient_weight = 0;
+  // if (imageGradient<float>(
+  //         depth_image, depth_rows, depth_cols,
+  //         u_px_center / static_cast<float>(depth_subsampling_factor), 10.f,
+  //         &gradient)) {
+  //   gradient_weight = -10 * gradient.norm();
+  // }
+
+  return w_area * w_angle;  // in [0, 1]
 }
 
 __device__ inline void updateTexel(const Color& color_measured,
@@ -223,8 +268,7 @@ __global__ void integrateBlocks(
   Vector3f voxel_center = getCenterPostionFromBlockIndexAndVoxelIndex(
       block_size, block_indices_device_ptr[blockIdx.x], voxel_idx);
   float measurement_weight = computeMeasurementWeight(
-      voxel_ptr, T_C_L, voxel_center, depth_image, depth_rows, depth_cols, u_px,
-      surface_depth_m, depth_subsample_factor);
+      voxel_ptr, T_C_L, voxel_center, u_px, surface_depth_m, voxel_ptr->dir);
 
   Color image_value;
   Index2D texel_idx;
@@ -250,8 +294,7 @@ __global__ void integrateBlocks(
   }
   // Since the voxel_weight is read when updating the texels, it must be updated
   // after all texels
-  voxel_ptr->weight =
-      fmin(fmax(measurement_weight, voxel_ptr->weight), max_weight);
+  voxel_ptr->weight = fmin(measurement_weight + voxel_ptr->weight, max_weight);
 }
 
 void ProjectiveTexIntegrator::updateBlocks(
