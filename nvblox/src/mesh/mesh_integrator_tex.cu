@@ -287,20 +287,36 @@ Vector2f MeshUVIntegrator::projectToTexPatch(
   return uv;
 }
 
-Color MeshUVIntegrator::getDirColor(const TexVoxel::Dir dir) const {
+Color MeshUVIntegrator::getDirColor(const TexVoxel::Dir dir,
+                                    const float positive_weight) const {
+  Color color;
   switch (dir) {
     case TexVoxel::Dir::X_PLUS:
+      color = Color::Red();
+      break;
     case TexVoxel::Dir::X_MINUS:
-      return Color::Red();
+      color = Color::blendTwoColors(Color::Red(), positive_weight,
+                                    Color::Black(), 1 - positive_weight);
+      break;
     case TexVoxel::Dir::Y_PLUS:
+      color = Color::Green();
+      break;
     case TexVoxel::Dir::Y_MINUS:
-      return Color::Green();
+      color = Color::blendTwoColors(Color::Green(), positive_weight,
+                                    Color::Black(), 1 - positive_weight);
+      break;
     case TexVoxel::Dir::Z_PLUS:
+      color = Color::Blue();
+      break;
     case TexVoxel::Dir::Z_MINUS:
-      return Color::Blue();
+      color = Color::blendTwoColors(Color::Blue(), positive_weight,
+                                    Color::Black(), 1 - positive_weight);
+      break;
     default:
-      return Color::Gray();
+      color = Color::Gray();
+      break;
   }
+  return color;
 }
 
 void MeshUVIntegrator::textureMeshCPU(const TexLayer& tex_layer,
@@ -334,8 +350,8 @@ void MeshUVIntegrator::textureMeshCPU(const TexLayer& tex_layer,
         //     tex_layer.block_size(), vertex, &tex_block_index,
         //     &tex_voxel_index);
         const Vector3f voxel_center =
-            getCenterPostionFromBlockIndexAndVoxelIndex(
-                tex_layer.block_size(), block_idx, voxel_idx);
+            getCenterPostionFromBlockIndexAndVoxelIndex(tex_layer.block_size(),
+                                                        block_idx, voxel_idx);
 
         // Add the tex_voxel's colors as a patch to the MeshBlockUV.
         // NOTE(rasaford) Since getVoxelAtPosition() requires a const pointer,

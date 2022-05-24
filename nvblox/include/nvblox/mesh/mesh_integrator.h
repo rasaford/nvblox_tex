@@ -181,7 +181,8 @@ class MeshUVIntegrator : public Mesher<CudaMeshBlockUV, MeshBlockUV> {
                              const Vector3f& voxel_center,
                              const float voxel_size,
                              const TexVoxel::Dir direction) const;
-  Color getDirColor(const TexVoxel::Dir dir) const;
+  Color getDirColor(const TexVoxel::Dir dir,
+                    const float positive_weight = 0.5f) const;
 
  protected:
   // The color that the mesh takes if no coloring is available.
