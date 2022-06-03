@@ -263,7 +263,7 @@ __global__ void majorityVoteTexVoxelDirs(
     }
   }
 
-  // if the most common direction is  as likely as the second most common
+  // if the most common direction is twice as likely as the second most common
   // one, we update the current voxels direction to be the most common one
   constexpr float DIR_UPDATE_CONFIDENCE = .5f;
   if (DIR_UPDATE_CONFIDENCE * max > second && max > 0 && second > 0) {

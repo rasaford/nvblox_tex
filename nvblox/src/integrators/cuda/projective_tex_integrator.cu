@@ -143,16 +143,16 @@ __device__ inline float computeMeasurementWeight(const TexVoxel* tex_voxel,
 
   // Area based weighting
   // Minimum depth of scanning (m). I.e. closest we will get to a point.
-  constexpr float MIN_DEPTH = .5f;
+  constexpr float MIN_DEPTH = .1f;
   // Smoothing for the deviation in normal direction we accept for w_area
   constexpr float SIMGA_AREA = 1.f;
   // Smoothing for the deviation in normal direction we accept for w_angle
-  constexpr float SIMGA_ANGLE = .1f;
-  constexpr float MIN_W_AREA = .05f;   // GAMAM_AREA in TextureFusion Paper
-  constexpr float MIN_W_ANGLE = .05f;  // GAMAM_ANGLE in TextureFusion Paper
+  constexpr float SIMGA_ANGLE = .2f;
+  constexpr float MIN_W_AREA = .001f;   // GAMAM_AREA in TextureFusion Paper
+  constexpr float MIN_W_ANGLE = .001f;  // GAMAM_ANGLE in TextureFusion Paper
 
   Vector3f view_dir = (T_C_L.translation() - voxel_center).normalized();
-  float normal_align = fabs(tex::texDirToWorldVector(dir).dot(-view_dir)); // in [0, 1]
+  float normal_align = tex::texDirToWorldVector(dir).dot(view_dir); // in [-1, 1]
   float depth_clipped = fmax(u_px_depth, MIN_DEPTH);
   // rho is the product of the alignment of the view direction with the surface
   // normal at the given voxel and the clipped inverse depth. I.e. voxels that
@@ -178,7 +178,7 @@ __device__ inline float computeMeasurementWeight(const TexVoxel* tex_voxel,
   ); // in [MIN_W_ANGLE, 1]
   // clang-format on
 
-  // printf("%f, %f\n", rho, normal_align);
+  // printf("depth_clipped: %f, rho: %f, normal_align: %f, w_area: %f, w_angle: %f\n", depth_clipped, rho, normal_align, w_area, w_angle);
 
   // // wiegh down voxels at depth discontinuities
   // Vector2f gradient;
