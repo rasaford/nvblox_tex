@@ -20,8 +20,9 @@ limitations under the License.
 #include "nvblox/gpu_hash/gpu_layer_view.h"
 #include "nvblox/integrators/projective_integrator_base.h"
 #include "nvblox/ray_tracing/sphere_tracer.h"
-#include "nvblox/tex/tex_integrator_kernels.h"
+#include "nvblox/tex/surface_estimation.h"
 #include "nvblox/tex/tex_conversions.h"
+#include "nvblox/tex/tex_integrator_kernels.h"
 
 namespace nvblox {
 
@@ -43,7 +44,7 @@ class ProjectiveTexIntegrator : public ProjectiveIntegratorBase {
                     const ColorImage& color_frame,
                     const DepthImage& depth_frame, const Transform& T_L_C,
                     const Camera& camera, const float truncation_distance_m,
-                    TexLayer* layer);
+                    const TsdfLayer& tsdf_layer, TexLayer* tex_layer_ptr);
 
  protected:
   std::vector<Index3D> reduceBlocksToThoseInTruncationBand(
@@ -57,7 +58,7 @@ class ProjectiveTexIntegrator : public ProjectiveIntegratorBase {
 
  public:
   // Params
-  int depth_render_ray_subsampling_factor_ = 4;
+  static constexpr int depth_render_ray_subsampling_factor_ = 4;
   static constexpr float kBufferExpansionFactor = 1.5f;
 
   // Object to do ray tracing to generate occlusions
@@ -68,9 +69,12 @@ class ProjectiveTexIntegrator : public ProjectiveIntegratorBase {
   // NOTE(alexmillane): We have one pinned host and one device vector and
   // transfer between them.
   device_vector<Index3D> block_indices_device_;
-  device_vector<TexBlock*> block_ptrs_device_;
+  device_vector<TexBlock*> tex_block_ptrs_device_;
+  device_vector<const TsdfBlock*> tsdf_block_ptrs_device_;
   host_vector<Index3D> block_indices_host_;
-  host_vector<TexBlock*> block_ptrs_host_;
+  host_vector<TexBlock*> tex_block_ptrs_host_;
+  host_vector<const TsdfBlock*> tsdf_block_ptrs_host_;
+  
 
   // Buffers for getting blocks in truncation band
   device_vector<const TsdfBlock*> truncation_band_block_ptrs_device_;
