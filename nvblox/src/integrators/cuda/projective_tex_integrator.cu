@@ -294,7 +294,7 @@ __global__ void integrateBlocks(
   }
   // Since the voxel_weight is read when updating the texels, it must be updated
   // after all texels
-  voxel_ptr->weight = fmin(measurement_weight + voxel_ptr->weight, max_weight);
+  voxel_ptr->weight = (measurement_weight + voxel_ptr->weight) / 2;
 }
 
 void ProjectiveTexIntegrator::updateBlocks(
