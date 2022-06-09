@@ -258,33 +258,33 @@ void MeshUVIntegrator::textureMeshGPU(
   //                            default_mesh_color_, mesh_layer, cuda_stream_);
 }
 
-Vector2f MeshUVIntegrator::projectToTexPatch(
-    const Vector3f& vertex, const Vector3f& voxel_center,
-    const float voxel_size, const TexVoxel::Dir direction) const {
+bool MeshUVIntegrator::projectToUV(const Vector3f& vertex,
+                                   const Vector3f& voxel_center,
+                                   const float voxel_size,
+                                   const TexVoxel::Dir direction,
+                                   Vector2f* uv) const {
   // NOTE(rasaford) since the directions encoded in TexVoxel::Dir are aligned
   // with the major coordinate axes, we do not need to do a complicated
   // projection here but can just take the respective coordinates directly
-  // const Vector3f texel_coords = (vertex);  // / voxel_size;
-  // TODO: fix this
-  const Vector3f texel_coords = (vertex - voxel_center) / voxel_size;
-  Vector2f uv;
+  Vector3f texel_coords = (vertex - voxel_center) / voxel_size;
+  texel_coords =
+      texel_coords.cwiseMax(Vector3f::Zero()).cwiseMin(Vector3f::Ones());
   switch (direction) {
     case TexVoxel::Dir::X_PLUS:
     case TexVoxel::Dir::X_MINUS:
-      uv << texel_coords(1), texel_coords(2);
-      break;
+      *uv << texel_coords(1), texel_coords(2);
+      return true;
     case TexVoxel::Dir::Y_PLUS:
     case TexVoxel::Dir::Y_MINUS:
-      uv << texel_coords(0), texel_coords(2);
-      break;
+      *uv << texel_coords(0), texel_coords(2);
+      return true;
     case TexVoxel::Dir::Z_PLUS:
     case TexVoxel::Dir::Z_MINUS:
-      uv << texel_coords(0), texel_coords(1);
-      break;
+      *uv << texel_coords(0), texel_coords(1);
+      return true;
     default:
-      uv << -1.0f, -1.0f;
+      return false;
   }
-  return uv;
 }
 
 Color MeshUVIntegrator::getDirColor(const TexVoxel::Dir dir,
@@ -341,14 +341,13 @@ void MeshUVIntegrator::textureMeshCPU(const TexLayer& tex_layer,
     for (int i = 0; i < block->vertices.size(); i++) {
       const Vector3f& vertex = block->vertices[i];
       const Index3D& voxel_idx = block->voxels[i];
-      const TexVoxel* tex_voxel;
+      const TexVoxel* tex_voxel =
+          getVoxelAtBlockAndVoxelIndex(tex_layer, block_idx, voxel_idx);
+      bool colors_updated = false;
+
       // not all blocks in a layer might be allocated. So we check if a voxel
       // exists at the vertex position.
-      if (getVoxelAtPosition<TexVoxel>(tex_layer, vertex, &tex_voxel)) {
-        // Index3D tex_block_index, tex_voxel_index;
-        // getBlockAndVoxelIndexFromPositionInLayer(
-        //     tex_layer.block_size(), vertex, &tex_block_index,
-        //     &tex_voxel_index);
+      if (tex_voxel != nullptr) {
         const Vector3f voxel_center =
             getCenterPostionFromBlockIndexAndVoxelIndex(tex_layer.block_size(),
                                                         block_idx, voxel_idx);
@@ -361,20 +360,16 @@ void MeshUVIntegrator::textureMeshCPU(const TexLayer& tex_layer,
             block_idx, voxel_idx, tex_voxel->kPatchWidth,
             tex_voxel->kPatchWidth, const_cast<TexVoxel*>(tex_voxel)->colors);
 
-        const Vector2f patch_uv = projectToTexPatch(
-            vertex, voxel_center, tex_layer.voxel_size(), tex_voxel->dir);
-        const Vector2f patch_uv_px = TexVoxel::kPatchWidth * patch_uv;
-        // Color interpolate;
-        // interpolation::interpolate2DLinear<Color>(
-        //     tex_voxel->colors, patch_uv_px, TexVoxel::kPatchWidth,
-        //     TexVoxel::kPatchWidth, &interpolate);
-
-        // block->colors[i] = interpolate;
-        block->colors[i] = getDirColor(tex_voxel->dir);
-        block->uvs[i] = patch_uv;
-        block->vertex_patches[i] = patch_index;
-
-      } else {
+        Vector2f patch_uv;
+        if (projectToUV(vertex, voxel_center, tex_layer.voxel_size(),
+                        tex_voxel->dir, &patch_uv)) {
+          colors_updated = true;
+          block->colors[i] = getDirColor(tex_voxel->dir);
+          block->uvs[i] = patch_uv;
+          block->vertex_patches[i] = patch_index;
+        }
+      }
+      if (!colors_updated) {
         block->colors[i] = Color::Gray();
         block->uvs[i] = Vector2f::Zero();
       }

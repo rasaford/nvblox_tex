@@ -13,5 +13,6 @@ template class TexVoxelTemplate<Color, 4>;
 template class TexVoxelTemplate<Color, 8>;
 template class TexVoxelTemplate<Color, 16>;
 template class TexVoxelTemplate<Color, 32>;
+template class TexVoxelTemplate<Color, 64>;
 
 }  // namespace nvblox
