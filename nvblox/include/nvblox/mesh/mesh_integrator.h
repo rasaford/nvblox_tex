@@ -177,10 +177,9 @@ class MeshUVIntegrator : public Mesher<CudaMeshBlockUV, MeshBlockUV> {
                       MeshUVLayer* mesh_layer);
 
  private:
-  Vector2f projectToTexPatch(const Vector3f& vertex,
-                             const Vector3f& voxel_center,
-                             const float voxel_size,
-                             const TexVoxel::Dir direction) const;
+  bool projectToUV(const Vector3f& vertex, const Vector3f& voxel_center,
+                         const float voxel_size, const TexVoxel::Dir direction,
+                         Vector2f* uv) const;
   Color getDirColor(const TexVoxel::Dir dir,
                     const float positive_weight = 0.5f) const;
 
