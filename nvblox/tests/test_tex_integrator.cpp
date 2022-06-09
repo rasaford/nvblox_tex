@@ -137,12 +137,16 @@ float checkSphereColor(const TexLayer& tex_layer, const Vector3f& center,
   auto check_color = [&num_tested, &num_observed](
                          const TexVoxel& voxel, const Color& color_2) -> void {
     ++num_tested;
-    if (voxel.weight >= 1.0f) {
-      for (int i = 0; i < TexVoxel::kPatchWidth; ++i) {
-        for (int j = 0; j < TexVoxel::kPatchWidth; ++j) {
+    bool observed = false;
+    for (int i = 0; i < TexVoxel::kPatchWidth; ++i) {
+      for (int j = 0; j < TexVoxel::kPatchWidth; ++j) {
+        if (voxel.weight(Index2D(i, j)) >= 0.0f) {
+          observed = true;
           EXPECT_EQ(voxel(i, j), color_2);
         }
       }
+    }
+    if (observed) {
       ++num_observed;
     }
   };
@@ -263,9 +267,9 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
   // 0)
   auto color_check_lambda = [&color](const Index3D& voxel_idx,
                                      const TexVoxel* voxel) -> void {
-    if (voxel->weight > 0.0f) {
-      for (size_t col = 0; col < voxel->kPatchWidth; ++col) {
-        for (size_t row = 0; row < voxel->kPatchWidth; ++row) {
+    for (size_t col = 0; col < voxel->kPatchWidth; ++col) {
+      for (size_t row = 0; row < voxel->kPatchWidth; ++row) {
+        if (voxel->weight(Index2D(row, col)) > 0.f) {
           EXPECT_EQ((*voxel)(row, col), color);
         }
       }
@@ -313,9 +317,18 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
   for (const Vector3f p : sphere_points) {
     const TexVoxel* tex_voxel;
     EXPECT_TRUE(getVoxelAtPosition<TexVoxel>(tex_layer, p, &tex_voxel));
-    if (tex_voxel->weight > 0.0f) {
-      ++num_points_on_sphere_surface_observed;
+
+    for (int i = 0; i < TexVoxel::kPatchWidth; i++) {
+      for (int j = 0; j < TexVoxel::kPatchWidth; j++) {
+        if (tex_voxel->weight(Index2D(i, j)) > 0.f) {
+          ++num_points_on_sphere_surface_observed;
+          goto loop_exit;
+        }
+      }
     }
+  loop_exit:
+    // this statement just exists to be able to have a valid jump point for loop_exit
+    int nop = 1;
   }
   const float ratio_observed_surface_points =
       static_cast<float>(num_points_on_sphere_surface_observed) /
