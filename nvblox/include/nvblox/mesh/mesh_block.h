@@ -95,6 +95,10 @@ struct MeshBlockUV : public MeshBlock {
   // patch it's uv coordinates belong to
   unified_vector<int> vertex_patches;
 
+  // Keeps track of the combined block / vertex indices of the patches already
+  // added to this mesh block. Required for duplicate removal.
+  unified_vector<Index6D> known_patch_indices;
+
   MeshBlockUV(MemoryType memory_type = MemoryType::kDevice);
 
   int addPatch(const Index3D& block_index, const Index3D& voxel_index,
@@ -106,15 +110,14 @@ struct MeshBlockUV : public MeshBlock {
 
   void expandVertexPatchesToMatchVertices();
 
+  void expandPatchesToMatchNumVoxels(const int kVoxelsPerSide);
+
   // Copy mesh data to the CPU.
   std::vector<Vector2f> getUVVectorOnCPU() const;
   std::vector<Color*> getPatchVectorOnCPU() const;
   std::vector<int> getVertexPatchVectorOnCPU() const;
 
   static Ptr allocate(MemoryType memory_type);
-
- protected:
-  unified_vector<Index6D> known_patch_indices;
 };
 
 // Helper struct for mesh blocks on CUDA.
@@ -133,11 +136,16 @@ struct CudaMeshBlock {
 };
 
 // Helper struct for uv mesh blocks on CUDA.
-struct CudaMeshBlockUV : CudaMeshBlock {
+struct CudaMeshBlockUV : public CudaMeshBlock {
   CudaMeshBlockUV() = default;
   CudaMeshBlockUV(MeshBlockUV* block);
 
-  Vector2f* uvs_;
+  Vector2f* uvs;
+  Color** patches;
+  int* vertex_patches;
+
+ protected:
+  Index6D* known_patch_indices;
 };
 
 }  // namespace nvblox

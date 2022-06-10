@@ -46,6 +46,21 @@ __host__ __device__ inline Vector3f getCenterPostionFromBlockIndexAndVoxelIndex(
     const float block_size, const Index3D& block_index,
     const Index3D& voxel_index);
 
+// pack a 3D voxel_index into a linear index. The linearization and
+// unlinearization are a bijective mapping.
+__host__ __device__ inline int linearizeVoxelIndex(const Index3D& voxel_index,
+                                                   const int kVoxelsPerSide) {
+  return kVoxelsPerSide * kVoxelsPerSide * voxel_index[0] +
+         kVoxelsPerSide * voxel_index[1] + voxel_index[2];
+}
+
+__host__ __device__ inline Index3D unlinearizeVoxelIndex(
+    const int linear_index, const int kVoxelsPerSide) {
+  const int voxels_squared = kVoxelsPerSide * kVoxelsPerSide;
+  return Index3D(linear_index / voxels_squared,
+                 (linear_index % voxels_squared) / kVoxelsPerSide,
+                 linear_index % kVoxelsPerSide);
+}
 /**
  * @brief Transfroms the texel_index to 2D texel coordinates
  * Where:
@@ -59,7 +74,6 @@ __host__ __device__ inline Vector3f getCenterPostionFromBlockIndexAndVoxelIndex(
  */
 __host__ __device__ inline Vector2f getTexelCoordsfromIdx(
     const Index2D& pixel_index, const int patch_width, const float voxel_size);
-
 
 __host__ __device__ inline Vector3f getCenterPositionForTexel(
     const float block_size, const Index3D& block_index,

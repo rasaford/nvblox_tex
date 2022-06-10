@@ -340,7 +340,7 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
   MeshUVLayer mesh_layer(block_size_m_, MemoryType::kUnified);
   EXPECT_TRUE(
       mesh_integrator.integrateMeshFromDistanceField(gt_layer_, &mesh_layer));
-  mesh_integrator.textureMeshCPU(tex_layer, &mesh_layer);
+  mesh_integrator.textureMesh(tex_layer, &mesh_layer);
 
   // Write to file
   auto textured_mesh = io::packTextures(mesh_layer);

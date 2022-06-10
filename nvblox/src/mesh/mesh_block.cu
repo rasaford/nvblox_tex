@@ -103,6 +103,12 @@ void MeshBlockUV::expandVertexPatchesToMatchVertices() {
   vertex_patches.resize(vertices.size());
 }
 
+void MeshBlockUV::expandPatchesToMatchNumVoxels(const int kVoxelsPerSide){
+  const int max_size = pow(kVoxelsPerSide, 3);
+  patches.reserve(max_size);
+  patches.resize(max_size);
+}
+
 std::vector<Vector2f> MeshBlockUV::getUVVectorOnCPU() const {
   return uvs.toVector();
 }
@@ -114,6 +120,7 @@ std::vector<Color*> MeshBlockUV::getPatchVectorOnCPU() const {
 std::vector<int> MeshBlockUV::getVertexPatchVectorOnCPU() const {
   return vertex_patches.toVector();
 }
+
 
 /**
  * @brief Adds a patch belonging to the index at (block_index, voxel_index) to
@@ -168,7 +175,10 @@ CudaMeshBlock::CudaMeshBlock(MeshBlock* block) {
 }
 
 CudaMeshBlockUV::CudaMeshBlockUV(MeshBlockUV* block) : CudaMeshBlock(block) {
-  uvs_ = block->uvs.data();
+  uvs = block->uvs.data();
+  patches = block->patches.data();
+  vertex_patches = block->vertex_patches.data();
+  known_patch_indices = block->known_patch_indices.data();
 }
 
 }  // namespace nvblox
