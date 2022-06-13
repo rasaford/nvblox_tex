@@ -85,6 +85,7 @@ class Fuse3DMatch {
   std::string base_path_;
   int sequence_num_ = 1;
   int num_frames_to_integrate_ = std::numeric_limits<int>::max();
+  int start_frame_ = 0;
   std::unique_ptr<datasets::ImageLoader<DepthImage>> depth_image_loader_;
   std::unique_ptr<datasets::ImageLoader<ColorImage>> color_image_loader_;
 

@@ -22,6 +22,8 @@ DECLARE_bool(alsologtostderr);
 
 DEFINE_int32(num_frames, -1,
              "Number of frames to process. Empty means process all.");
+DEFINE_int32(start_frame, 0,
+             "First frame index to start integrating. Default 0.");
 
 DEFINE_string(timing_output_path, "",
               "File in which to save the timing results.");
@@ -51,6 +53,9 @@ int main(int argc, char* argv[]) {
       nvblox::experiments::TexFuse3DMatch::createFromCommandLineArgs(argc, argv);
   if (FLAGS_num_frames > 0) {
     fuser.num_frames_to_integrate_ = FLAGS_num_frames;
+  }
+  if (FLAGS_start_frame > 0) {
+    fuser.start_frame_ = FLAGS_start_frame;
   }
   if (!FLAGS_timing_output_path.empty()) {
     fuser.timing_output_path_ = FLAGS_timing_output_path;

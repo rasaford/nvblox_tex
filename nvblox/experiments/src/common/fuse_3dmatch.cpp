@@ -223,8 +223,8 @@ bool Fuse3DMatch::integrateFrame(const int frame_number) {
 }
 
 bool Fuse3DMatch::integrateFrames() {
-  int frame_number = 0;
-  while (frame_number < num_frames_to_integrate_ &&
+  int frame_number = start_frame_;
+  while (frame_number < start_frame_ + num_frames_to_integrate_ &&
          integrateFrame(frame_number++)) {
     timing::mark("Frame " + std::to_string(frame_number - 1), Color::Red());
     LOG(INFO) << "Integrating frame " << frame_number - 1;
