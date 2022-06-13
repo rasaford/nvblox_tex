@@ -99,38 +99,40 @@ std::string getPathForColorImage(const std::string& base_path, const int seq_id,
 
 std::unique_ptr<nvblox::datasets::ImageLoader<DepthImage>>
 createDepthImageLoader(const std::string& base_path, const int seq_id,
-                       MemoryType memory_type) {
+                       MemoryType memory_type, int start_frame) {
   return std::make_unique<nvblox::datasets::ImageLoader<DepthImage>>(
       std::bind(getPathForDepthImage, base_path, seq_id, std::placeholders::_1),
-      memory_type);
+      memory_type, start_frame);
 }
 
 std::unique_ptr<nvblox::datasets::ImageLoader<ColorImage>>
 createColorImageLoader(const std::string& base_path, const int seq_id,
-                       MemoryType memory_type) {
+                       MemoryType memory_type, int start_frame) {
   return std::make_unique<nvblox::datasets::ImageLoader<ColorImage>>(
       std::bind(getPathForColorImage, base_path, seq_id, std::placeholders::_1),
-      memory_type);
+      memory_type, start_frame);
 }
 
 std::unique_ptr<nvblox::datasets::ImageLoader<DepthImage>>
 createMultithreadedDepthImageLoader(const std::string& base_path,
                                     const int seq_id, const int num_threads,
-                                    MemoryType memory_type) {
+                                    MemoryType memory_type,
+                                    int start_frame) {
   return std::make_unique<
       nvblox::datasets::MultiThreadedImageLoader<DepthImage>>(
       std::bind(getPathForDepthImage, base_path, seq_id, std::placeholders::_1),
-      num_threads, memory_type);
+      num_threads, memory_type, start_frame);
 }
 
 std::unique_ptr<nvblox::datasets::ImageLoader<ColorImage>>
 createMultithreadedColorImageLoader(const std::string& base_path,
                                     const int seq_id, const int num_threads,
-                                    MemoryType memory_type) {
+                                    MemoryType memory_type,
+                                    int start_frame) {
   return std::make_unique<
       nvblox::datasets::MultiThreadedImageLoader<ColorImage>>(
       std::bind(getPathForColorImage, base_path, seq_id, std::placeholders::_1),
-      num_threads, memory_type);
+      num_threads, memory_type, start_frame);
 }
 
 }  // namespace threedmatch

@@ -81,6 +81,7 @@ int main(int argc, char* argv[]) {
     fuser.setEsdfFrameSubsampling(FLAGS_esdf_frame_subsampling);
   }
 
+  fuser.initializeImageLoaders();
   // Make sure the layers are the correct resolution.
   return fuser.run();
 }

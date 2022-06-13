@@ -28,8 +28,8 @@ bool ImageLoader<ImageType>::getNextImage(ImageType* image_ptr) {
 template <typename ImageType>
 MultiThreadedImageLoader<ImageType>::MultiThreadedImageLoader(
     IndexToFilepathFunction index_to_filepath, int num_threads,
-    MemoryType memory_type)
-    : ImageLoader<ImageType>(index_to_filepath, memory_type),
+    MemoryType memory_type, int start_frame)
+    : ImageLoader<ImageType>(index_to_filepath, memory_type, start_frame),
       num_threads_(num_threads) {
   initLoadQueue();
 }

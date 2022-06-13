@@ -113,17 +113,17 @@ void Fuse3DMatch::initializeImageLoaders(bool multithreaded) {
               << " threads for loading images.";
     depth_image_loader_ =
         datasets::threedmatch::createMultithreadedDepthImageLoader(
-            base_path_, sequence_num_, num_loading_threads,
-            MemoryType::kDevice);
+            base_path_, sequence_num_, num_loading_threads, MemoryType::kDevice,
+            start_frame_);
     color_image_loader_ =
         datasets::threedmatch::createMultithreadedColorImageLoader(
-            base_path_, sequence_num_, num_loading_threads,
-            MemoryType::kDevice);
+            base_path_, sequence_num_, num_loading_threads, MemoryType::kDevice,
+            start_frame_);
   } else {
     depth_image_loader_ = datasets::threedmatch::createDepthImageLoader(
-        base_path_, sequence_num_, MemoryType::kDevice);
+        base_path_, sequence_num_, MemoryType::kDevice, start_frame_);
     color_image_loader_ = datasets::threedmatch::createColorImageLoader(
-        base_path_, sequence_num_, MemoryType::kDevice);
+        base_path_, sequence_num_, MemoryType::kDevice, start_frame_);
   }
 }
 

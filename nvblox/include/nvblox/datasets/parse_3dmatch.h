@@ -43,20 +43,20 @@ std::string getPathForColorImage(const std::string& base_path, const int seq_id,
 // Factory functions for single-threaded 3DMatch image loaders
 std::unique_ptr<nvblox::datasets::ImageLoader<DepthImage>>
 createDepthImageLoader(const std::string& base_path, const int seq_id,
-                       MemoryType memory_type = kDefaultImageMemoryType);
+                       MemoryType memory_type = kDefaultImageMemoryType, int start_frame = 0);
 std::unique_ptr<nvblox::datasets::ImageLoader<ColorImage>>
 createColorImageLoader(const std::string& base_path, const int seq_id,
-                       MemoryType memory_type = kDefaultImageMemoryType);
+                       MemoryType memory_type = kDefaultImageMemoryType, int start_frame = 0);
 
 // Factory functions for multi-threaded 3DMatch image loaders
 std::unique_ptr<nvblox::datasets::ImageLoader<DepthImage>>
 createMultithreadedDepthImageLoader(
     const std::string& base_path, const int seq_id, const int num_threads,
-    MemoryType memory_type = kDefaultImageMemoryType);
+    MemoryType memory_type = kDefaultImageMemoryType,int start_frame = 0);
 std::unique_ptr<nvblox::datasets::ImageLoader<ColorImage>>
 createMultithreadedColorImageLoader(
     const std::string& base_path, const int seq_id, const int num_threads,
-    MemoryType memory_type = kDefaultImageMemoryType);
+    MemoryType memory_type = kDefaultImageMemoryType, int start_frame = 0);
 
 }  // namespace threedmatch
 }  // namespace datasets

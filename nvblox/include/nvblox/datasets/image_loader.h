@@ -41,8 +41,11 @@ template <typename ImageType>
 class ImageLoader {
  public:
   ImageLoader(IndexToFilepathFunction index_to_filepath,
-              MemoryType memory_type = kDefaultImageMemoryType)
-      : index_to_filepath_(index_to_filepath), memory_type_(memory_type) {}
+              MemoryType memory_type = kDefaultImageMemoryType,
+              int start_frame = 0)
+      : index_to_filepath_(index_to_filepath),
+        memory_type_(memory_type),
+        image_idx_(start_frame) {}
   virtual ~ImageLoader() {}
 
   virtual bool getNextImage(ImageType* image_ptr);
@@ -65,7 +68,8 @@ class MultiThreadedImageLoader : public ImageLoader<ImageType> {
  public:
   MultiThreadedImageLoader(IndexToFilepathFunction index_to_filepath,
                            int num_threads,
-                           MemoryType memory_type = kDefaultImageMemoryType);
+                           MemoryType memory_type = kDefaultImageMemoryType,
+                           int start_frame = 0);
   ~MultiThreadedImageLoader();
 
   bool getNextImage(ImageType* image_ptr) override;
