@@ -31,7 +31,7 @@ struct Color {
   uint8_t g;
   uint8_t b;
 
-  bool operator==(const Color& other) const {
+  __host__ __device__ bool operator==(const Color& other) const {
     return (r == other.r) && (g == other.g) && (b == other.b);
   }
 

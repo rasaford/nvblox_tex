@@ -47,7 +47,7 @@ struct MeshBlock {
   unified_vector<float> intensities;
   unified_vector<int> triangles;
   // for each vertex (index given by the vertices vector) voxels defines the
-  // lindex of the voxel that generated this vertex. This information is
+  // index of the voxel that generated this vertex. This information is
   // required for voxel based texturing
   unified_vector<Index3D> voxels;
 

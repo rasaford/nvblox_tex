@@ -68,10 +68,15 @@ class TexVoxelTemplate {
     return dir != Dir::NONE;
   }
 
-  __host__ __device__ inline void updateDir(const Dir dir, const float dir_weight) {
+  __host__ __device__ inline void updateDir(const Dir dir,
+                                            const float dir_weight) {
     this->dir = dir;
     this->dir_weight = dir_weight;
-    this->weight = 0.f;
+    for (int i = 0; i < kPatchWidth; i++) {
+      for (int j = 0; j < kPatchWidth; j++) {
+        this->weight(Index2D(i, j)) = 0.f;
+      }
+    }
   }
 
   // Access
@@ -97,6 +102,19 @@ class TexVoxelTemplate {
     return colors[linear_idx];
   }
 
+  __host__ __device__ inline Color color(const Index2D& index) const {
+    return colors[index[0] * kPatchWidth + index[1]];
+  }
+  __host__ __device__ inline Color& color(const Index2D& index) {
+    return colors[index[0] * kPatchWidth + index[1]];
+  }
+  __host__ __device__ inline float weight(const Index2D& index) const {
+    return weights[index[0] * kPatchWidth + index[1]];
+  }
+  __host__ __device__ inline float& weight(const Index2D& index) {
+    return weights[index[0] * kPatchWidth + index[1]];
+  }
+
   // hopefully this value does not get stored for every TexVoxel this way
   static constexpr int kPatchWidth = _PatchWidth;
   // patch size in pixels. Each TexVoxel is of size (kPatchWidth, kPatchWidth)
@@ -105,7 +123,10 @@ class TexVoxelTemplate {
   // minimum amount of memory for each TexVoxel.
   Color colors[kPatchWidth * kPatchWidth];
   // how confident we are in the colors for this observation
-  float weight = 0.;
+  // TODO(rasaford) storing weights as floats requires 4 * kPatchWidth *
+  // kPatchWidth bytes. Consider lowering this using half precision arithmetic
+  // i.e. cuda_fp16.h
+  float weights[kPatchWidth * kPatchWidth];
 
   // any of six asis aligned directions the 2d texture plane is facing in 3d
   // space
@@ -113,7 +134,7 @@ class TexVoxelTemplate {
   // how confident we are in the direction estimate for this observation
   float dir_weight = 0.;
 
-  // static parameter 
+  // static parameter
   static constexpr float DIR_THRESHOLD = 0.9f;
 };
 
@@ -122,7 +143,6 @@ class TexVoxelTemplate {
 // NOTE(rasaford) To actually be able to use this type, it needs to be defined
 // in voxels.cpp (above its only the declaration).
 typedef TexVoxelTemplate<Color, 8> TexVoxel;
-
 
 struct FreespaceVoxel {
   bool free = true;

@@ -39,6 +39,10 @@ add_executable(test_indexing test_indexing.cpp)
 target_link_libraries(test_indexing nvblox_test_utils)
 gtest_discover_tests(test_indexing ${TEST_OPTIONS})
 
+add_executable(test_tex test_tex.cpp)
+target_link_libraries(test_tex nvblox_test_utils)
+gtest_discover_tests(test_tex ${TEST_OPTIONS})
+
 add_executable(test_layer test_layer.cpp)
 target_link_libraries(test_layer nvblox_test_utils)
 gtest_discover_tests(test_layer ${TEST_OPTIONS})
