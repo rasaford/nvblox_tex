@@ -380,7 +380,7 @@ bool TexFuse3DMatch::integrateFrame(const int frame_number) {
   // Check that the loaded data doesn't contain NaNs or a faulty rotation
   // matrix. This does occur. If we find one, skip that frame and move to the
   // next.
-  constexpr float kRotationMatrixDetEpsilon = 1e-4;
+  constexpr float kRotationMatrixDetEpsilon = 1e-2;
   if (!T_L_C.matrix().allFinite() || !camera_intrinsics.allFinite() ||
       std::abs(T_L_C.matrix().block<3, 3>(0, 0).determinant() - 1.0f) >
           kRotationMatrixDetEpsilon) {
