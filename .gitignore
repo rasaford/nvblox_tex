@@ -1,4 +1,8 @@
-**/build
+
+evaluation/*
+!evaluation/*.sh
+!evaluation/*.py
+
 results
 
 
@@ -39,8 +43,9 @@ results
 *.vscode
 
 # Build files
-*build
-*install
+**/build
+**/build2
+**/install
 
 # Python
 *.pyc

@@ -68,7 +68,8 @@ class TexVoxelTemplate {
     return dir != Dir::NONE;
   }
 
-  __host__ __device__ inline void updateDir(const Dir dir, const float dir_weight) {
+  __host__ __device__ inline void updateDir(const Dir dir,
+                                            const float dir_weight) {
     this->dir = dir;
     this->dir_weight = dir_weight;
     this->weight = 0.f;
@@ -113,7 +114,7 @@ class TexVoxelTemplate {
   // how confident we are in the direction estimate for this observation
   float dir_weight = 0.;
 
-  // static parameter 
+  // static parameter
   static constexpr float DIR_THRESHOLD = 0.9f;
 };
 
@@ -121,8 +122,11 @@ class TexVoxelTemplate {
 // Each TexVoxel is a 2d grid of colors for each voxel
 // NOTE(rasaford) To actually be able to use this type, it needs to be defined
 // in voxels.cpp (above its only the declaration).
+#ifdef TEXEL_SIZE
+typedef TexVoxelTemplate<Color, TEXEL_SIZE> TexVoxel;
+#else
 typedef TexVoxelTemplate<Color, 8> TexVoxel;
-
+#endif
 
 struct FreespaceVoxel {
   bool free = true;
