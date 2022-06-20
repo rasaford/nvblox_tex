@@ -1,14 +1,42 @@
-from copy import copy
-from pickle import BUILD
+from logging import warning
 import subprocess
 import argparse
 import os
 import shutil
-from tracemalloc import start
-import yaml
+import json
+import GPUtil
+from typing import Dict, List
+from threading import Thread
+import time
 
 BUILD_DIR = "build2"
 BASE_EXPERIMENT_DIR = "results"
+# in seconds the frequency with which we sample the current gpu usage
+GPU_MONITOR_DELAY = 1
+
+
+class GPUMonitor(Thread):
+    def __init__(self, delay: float, gpu_id: int):
+        super(GPUMonitor, self).__init__()
+        self._stopped = False
+        self._delay = delay
+        self._gpu_id = gpu_id
+        self.samples = []
+        self.start()
+
+    def run(self):
+        while not self._stopped:
+            try:
+                GPUs = GPUtil.getGPUs()
+                # find the selected gpu
+                GPU = next(gpu for gpu in GPUs if gpu.id == self._gpu_id)
+                self.samples.append({**GPU.__dict__, **{"time": time.time()}})
+            except StopIteration:
+                warning(f"The GPU with id: {self._gpu_id} could not be found")
+                pass
+
+    def stop(self):
+        self._stopped = True
 
 
 def build_experiment(run_id: str, target: str, texel_size: int = 8, out_dir: str = "bin", build_dir: str = os.path.join(os.getcwd(), f"../{BUILD_DIR}"), jobs: int = 16, rebuild=False) -> str:
@@ -20,11 +48,15 @@ def build_experiment(run_id: str, target: str, texel_size: int = 8, out_dir: str
     os.makedirs(build_dir, exist_ok=True)
 
     # call cmake to build the given target
-    subprocess.call(
-        ["cmake", "../nvblox", f"-DTEXEL_SIZE={texel_size}"], cwd=build_dir)
+    subprocess.call(["cmake", "--no-warn-unused-cli", "-DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE",
+                     "-DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo", "-DCMAKE_C_COMPILER:FILEPATH=/bin/x86_64-linux-gnu-gcc-9",
+                     "-DCMAKE_CXX_COMPILER:FILEPATH=/bin/x86_64-linux-gnu-g++-9",
+                     f"-S{os.path.abspath('../nvblox')}", f"-B{os.path.abspath(build_dir)}", f"-DTEXEL_SIZE={texel_size}", "-G", "Ninja"])
+
     # call directly to make instead of cmake --build . since the latter option
     # as some issues with being called from python
-    subprocess.call(["make", target, f"-j{jobs}"], cwd=build_dir)
+    subprocess.call(["cmake", f"--build", os.path.abspath(build_dir),
+                    "--config", "RelWithDebInfo", "--target", target])
     # copy the resulting binary to out_dir
     shutil.copy2(os.path.join(build_dir, "experiments", target), bin_file)
     return bin_file
@@ -33,9 +65,11 @@ def build_experiment(run_id: str, target: str, texel_size: int = 8, out_dir: str
 def run_experiment(run_id: str, binary_path: str, dataset_path: str, out_dir: str, voxel_size: float = 0.05, num_frames: int = -1, start_frame: int = 0, cuda_device_id: int = 1):
     os.makedirs(out_dir, exist_ok=True)
 
-    config_file = os.path.join(out_dir, f"{run_id}.config.yaml")
+    config_file = os.path.join(out_dir, f"{run_id}.config.json")
     mesh_file = os.path.join(out_dir, f"{run_id}.ply")
     timing_file = os.path.join(out_dir, f"{run_id}.timings.txt")
+    gpu_usage_file = os.path.join(out_dir, f"{run_id}.gpu_usage.json")
+    stdout_file = os.path.join(out_dir, f"{run_id}.stdout.txt")
     tex_file = os.path.join(out_dir, f"{run_id}.png")
     config = {
         "direct": {
@@ -59,13 +93,21 @@ def run_experiment(run_id: str, binary_path: str, dataset_path: str, out_dir: st
         config["params"]["texture_output_path"] = tex_file
 
     with open(config_file, "w") as f:
-        yaml.dump(config, f)
+        json.dump(config, f, indent=4, sort_keys=True)
 
-    subprocess.call(
+    print(f"Running experiment {run_id}")
+    monitor = GPUMonitor(GPU_MONITOR_DELAY, cuda_device_id)
+    process_output = subprocess.check_output(
         list(config["direct"].values()) +
         [f"--{k}={v}" for k, v in config["params"].items()])
     # TODO: add env vars back to subprocess command
     # env={**os.environ, **config["env"]})
+    monitor.stop()
+
+    with open(gpu_usage_file, "w") as f:
+        json.dump(monitor.samples, f, indent=4, sort_keys=True)
+    with open(stdout_file, "w") as f:
+        f.write(str(process_output))
 
 
 def experiment_1(dataset_root: str, rebuild=False):

@@ -1,7 +1,6 @@
 
-evaluation/*
-!evaluation/*.sh
-!evaluation/*.py
+evaluation/bin/
+evaluation/results/
 
 results
 
