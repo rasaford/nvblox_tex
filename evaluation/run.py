@@ -5,7 +5,6 @@ import os
 import shutil
 import json
 import GPUtil
-from typing import Dict, List
 from threading import Thread
 import time
 
@@ -39,10 +38,8 @@ class GPUMonitor(Thread):
         self._stopped = True
 
 
-def build_experiment(run_id: str, target: str, texel_size: int = 8, out_dir: str = "bin", build_dir: str = os.path.join(os.getcwd(), f"../{BUILD_DIR}"), jobs: int = 16, rebuild=False) -> str:
+def build_experiment(run_id: str, target: str, texel_size: int = 8, out_dir: str = "bin", build_dir: str = os.path.join(os.getcwd(), f"../{BUILD_DIR}")) -> str:
     bin_file = os.path.join(out_dir, run_id)
-    if os.path.exists(bin_file) and not rebuild:
-        return bin_file
 
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(build_dir, exist_ok=True)
@@ -110,19 +107,18 @@ def run_experiment(run_id: str, binary_path: str, dataset_path: str, out_dir: st
         f.write(str(process_output))
 
 
-def experiment_1(dataset_root: str, rebuild=False):
+def experiment_1(dataset_root: str):
     # build the required binaries
     CORRIDOR_HANDHELD_L515 = os.path.join(
         dataset_root, "corridor_handheld_L515")
     OUT_DIR = os.path.join(BASE_EXPERIMENT_DIR, "Q1")
 
     NVT_Q1_01_BIN = build_experiment("NVT_Q1_01", target="tex_integration",
-                                     texel_size=8, rebuild=rebuild)
+                                     texel_size=8)
     run_experiment("NVT_Q1_01", NVT_Q1_01_BIN, CORRIDOR_HANDHELD_L515,
-                   OUT_DIR, voxel_size=0.05, num_frames=10)
+                   OUT_DIR, voxel_size=0.05)
 
-    NV_Q1_01_BIN = build_experiment("NV_Q1_01", target="fuse_3dmatch",
-                                    rebuild=rebuild)
+    NV_Q1_01_BIN = build_experiment("NV_Q1_01", target="fuse_3dmatch")
 
     run_experiment("NV_Q1_01", NV_Q1_01_BIN,
                    CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.05)
@@ -134,7 +130,7 @@ def experiment_1(dataset_root: str, rebuild=False):
                    CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.005)
 
 
-def experiment_2(dataset_root: str, rebuild=False):
+def experiment_2(dataset_root: str):
     texel_sizes = [1, 4, 8, 16]
     voxel_sizes = [0.2, 0.1, 0.05, 0.02]
     DATASET = os.path.join(dataset_root, "corridor_handheld_L515")
@@ -142,7 +138,7 @@ def experiment_2(dataset_root: str, rebuild=False):
 
     for texel_size in texel_sizes:
         bin_file = build_experiment(f"NVT_Q2_{texel_size}x{texel_size}",
-                                    target="tex_integration", texel_size=texel_size, rebuild=rebuild)
+                                    target="tex_integration", texel_size=texel_size)
 
         for voxel_size in voxel_sizes:
             run_id = f"NVT_Q2_{texel_size}x{texel_size}_{voxel_size}"
@@ -150,16 +146,16 @@ def experiment_2(dataset_root: str, rebuild=False):
                            OUT_DIR, voxel_size=voxel_size)
 
 
-def experiment_3(dataset_root: str, rebuild=False):
+def experiment_3(dataset_root: str):
     run_id = "NVT_Q3_01"
     NVT_Q3_01_BIN = build_experiment(run_id, target="tex_integration",
-                                     texel_size=4, rebuild=rebuild)
+                                     texel_size=4)
     DATASET = os.path.join(dataset_root, "corridor_ANYmal_L515")
     OUT_DIR = os.path.join(BASE_EXPERIMENT_DIR, "Q3")
     run_experiment(run_id, NVT_Q3_01_BIN, DATASET, OUT_DIR, voxel_size=0.05)
 
 
-def experiment_4(dataset_root: str, rebuild=False):
+def experiment_4(dataset_root: str):
     raise NotImplementedError(
         "Not yet implemented, since I dont not have an NVIDIA Jetson to test on at the moment")
 
@@ -175,12 +171,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.experiment == 1:
-        experiment_1(args.dataset_root, args.rebuild)
+        experiment_1(args.dataset_root)
     elif args.experiment == 2:
-        experiment_2(args.dataset_root, args.rebuild)
+        experiment_2(args.dataset_root)
     elif args.experiment == 3:
-        experiment_3(args.dataset_root, args.rebuild)
+        experiment_3(args.dataset_root)
     elif args.experiment == 4:
-        experiment_4(args.dataset_root, args.rebuild)
+        experiment_4(args.dataset_root)
     else:
         raise RuntimeError(f"Invalid experiment ID: {args.experiment}")

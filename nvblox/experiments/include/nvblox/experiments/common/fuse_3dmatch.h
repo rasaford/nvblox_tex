@@ -37,13 +37,28 @@ limitations under the License.
 namespace nvblox {
 namespace experiments {
 
+struct Fuse3DMatchOptions {
+  int num_frames = -1, start_frame = 0;
+  std::string timing_output_path = std::string(),
+              esdf_output_path = std::string(),
+              mesh_output_path = std::string();
+  float voxel_size = 0.05f;
+  int tsdf_frame_subsampling = 1, color_frame_subsampling = 1,
+      mesh_frame_subsampling = 1, esdf_frame_subsampling = 1;
+};
+
+struct TexFuse3DMatchOptions : public Fuse3DMatchOptions {
+  std::string texture_output_path = std::string();
+};
+
 class Fuse3DMatch {
  public:
   Fuse3DMatch() = default;
   Fuse3DMatch(const std::string& base_path,
               const std::string& timing_output_path = std::string(),
               const std::string& mesh_output_path = std::string(),
-              const std::string& esdf_output_path = std::string());
+              const std::string& esdf_output_path = std::string(),
+              const float voxel_size = 0.05f);
 
   // Runs an experiment
   virtual int run();
@@ -76,7 +91,8 @@ class Fuse3DMatch {
   virtual bool outputTimingsToFile() const;
 
   // Factory: From command line args
-  static Fuse3DMatch createFromCommandLineArgs(int argc, char* argv[]);
+  static Fuse3DMatch createFromCommandLineArgs(
+      int argc, char* argv[], const Fuse3DMatchOptions& options);
 
   // Get the mapper (useful for experiments where we modify mapper settings)
   RgbdMapper& mapper() { return mapper_; }
@@ -111,13 +127,14 @@ class Fuse3DMatch {
 };
 
 class TexFuse3DMatch : public Fuse3DMatch {
-  public:
+ public:
   TexFuse3DMatch() = default;
   TexFuse3DMatch(const std::string& base_path,
                  const std::string& timing_output_path = std::string(),
                  const std::string& mesh_output_path = std::string(),
                  const std::string& esdf_output_path = std::string(),
-                 const std::string& texture_output_path = std::string());
+                 const std::string& texture_output_path = std::string(),
+                 const float voxel_size = 0.05f);
 
   // Integrate certain layers.
   virtual bool integrateFrame(const int frame_number) override;
@@ -128,7 +145,8 @@ class TexFuse3DMatch : public Fuse3DMatch {
   virtual bool outputMeshPly() const override;
 
   // Factory: From command line args
-  static TexFuse3DMatch createFromCommandLineArgs(int argc, char* argv[]);
+  static TexFuse3DMatch createFromCommandLineArgs(
+      int argc, char* argv[], const TexFuse3DMatchOptions& options);
 
   // Get the mapper (useful for experiments where we modify mapper settings)
   TexMapper& mapper() { return mapper_; }
