@@ -31,7 +31,7 @@ DEFINE_string(esdf_output_path, "",
               "File in which to save the ESDF pointcloud.");
 DEFINE_string(mesh_output_path, "", "File in which to save the surface mesh.");
 
-DEFINE_double(voxel_size, 0.0f, "Voxel resolution in meters.");
+DEFINE_double(voxel_size, 0.0, "Voxel resolution in meters.");
 DEFINE_int32(tsdf_frame_subsampling, 0,
              "By what amount to subsample the TSDF frames. A subsample of 3 "
              "means only every 3rd frame is taken.");
@@ -53,7 +53,7 @@ int main(int argc, char* argv[]) {
                                                   FLAGS_timing_output_path,
                                                   FLAGS_esdf_output_path,
                                                   FLAGS_mesh_output_path,
-                                                  FLAGS_voxel_size,
+                                                  static_cast<float>(FLAGS_voxel_size),
                                                   FLAGS_tsdf_frame_subsampling,
                                                   FLAGS_color_frame_subsampling,
                                                   FLAGS_mesh_frame_subsampling,
