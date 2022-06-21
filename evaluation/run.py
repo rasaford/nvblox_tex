@@ -59,7 +59,7 @@ def build_experiment(run_id: str, target: str, texel_size: int = 8, out_dir: str
     return bin_file
 
 
-def run_experiment(run_id: str, binary_path: str, dataset_path: str, out_dir: str, voxel_size: float = 0.05, num_frames: int = -1, start_frame: int = 0, cuda_device_id: int = 1):
+def run_experiment(run_id: str, binary_path: str, dataset_path: str, out_dir: str, voxel_size: float = 0.05, texel_size: int = 8, num_frames: int = -1, start_frame: int = 0, cuda_device_id: int = 1):
     os.makedirs(out_dir, exist_ok=True)
 
     config_file = os.path.join(out_dir, f"{run_id}.config.json")
@@ -82,6 +82,9 @@ def run_experiment(run_id: str, binary_path: str, dataset_path: str, out_dir: st
         },
         "env": {
             "CUDA_VISIBLE_DEVICES": cuda_device_id
+        },
+        "bin": {
+            "texel_size": texel_size
         }
     }
 
@@ -93,6 +96,8 @@ def run_experiment(run_id: str, binary_path: str, dataset_path: str, out_dir: st
         json.dump(config, f, indent=4, sort_keys=True)
 
     print(f"Running experiment {run_id}")
+    print(json.dumps(config, indent=4, sort_keys=True))
+
     monitor = GPUMonitor(GPU_MONITOR_DELAY, cuda_device_id)
     process_output = subprocess.check_output(
         list(config["direct"].values()) +
@@ -116,18 +121,18 @@ def experiment_1(dataset_root: str):
     NVT_Q1_01_BIN = build_experiment("NVT_Q1_01", target="tex_integration",
                                      texel_size=8)
     run_experiment("NVT_Q1_01", NVT_Q1_01_BIN, CORRIDOR_HANDHELD_L515,
-                   OUT_DIR, voxel_size=0.05)
+                   OUT_DIR, voxel_size=0.05, texel_size=8)
 
     NV_Q1_01_BIN = build_experiment("NV_Q1_01", target="fuse_3dmatch")
 
     run_experiment("NV_Q1_01", NV_Q1_01_BIN,
-                   CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.05)
+                   CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.05, texel_size=1)
     run_experiment("NV_Q1_02", NV_Q1_01_BIN,
-                   CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.02)
+                   CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.02, texel_size=1)
     run_experiment("NV_Q1_03", NV_Q1_01_BIN,
-                   CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.01)
+                   CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.01, texel_size=1)
     run_experiment("NV_Q1_05", NV_Q1_01_BIN,
-                   CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.005)
+                   CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.005, texel_size=1)
 
 
 def experiment_2(dataset_root: str):
@@ -143,7 +148,7 @@ def experiment_2(dataset_root: str):
         for voxel_size in voxel_sizes:
             run_id = f"NVT_Q2_{texel_size}x{texel_size}_{voxel_size}"
             run_experiment(run_id, bin_file, DATASET,
-                           OUT_DIR, voxel_size=voxel_size)
+                           OUT_DIR, voxel_size=voxel_size, texel_size=texel_size)
 
 
 def experiment_3(dataset_root: str):
@@ -162,21 +167,27 @@ def experiment_4(dataset_root: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--experiment", type=int, required=True,
-                        help="ID of the experiment we want to run")
+    valid_experiments = ["1", "2", "3", "4", "all"]
+    parser.add_argument("--experiment", type=str, required=True,
+                        help=f"ID of the experiment we want to run. Possible values {' | '.join(valid_experiments)}")
     parser.add_argument("--dataset_root", type=str, required=True,
                         help="root dir of the datasets in 3dmatch format")
     parser.add_argument("--rebuild", action="store_true",
                         help="If the required binaries for the run should be rebuilt")
     args = parser.parse_args()
 
-    if args.experiment == 1:
+    if args.experiment == "1":
         experiment_1(args.dataset_root)
-    elif args.experiment == 2:
+    elif args.experiment == "2":
         experiment_2(args.dataset_root)
-    elif args.experiment == 3:
+    elif args.experiment == "3":
         experiment_3(args.dataset_root)
-    elif args.experiment == 4:
+    elif args.experiment == "4":
+        experiment_4(args.dataset_root)
+    elif args.experiment == "all":
+        experiment_1(args.dataset_root)
+        experiment_2(args.dataset_root)
+        experiment_3(args.dataset_root)
         experiment_4(args.dataset_root)
     else:
         raise RuntimeError(f"Invalid experiment ID: {args.experiment}")
