@@ -72,11 +72,7 @@ class TexVoxelTemplate {
                                             const float dir_weight) {
     this->dir = dir;
     this->dir_weight = dir_weight;
-    for (int i = 0; i < kPatchWidth; i++) {
-      for (int j = 0; j < kPatchWidth; j++) {
-        this->weight(Index2D(i, j)) = 0.f;
-      }
-    }
+    this->weight = 0.f;
   }
 
   // Access
@@ -108,12 +104,6 @@ class TexVoxelTemplate {
   __host__ __device__ inline Color& color(const Index2D& index) {
     return colors[index[0] * kPatchWidth + index[1]];
   }
-  __host__ __device__ inline float weight(const Index2D& index) const {
-    return weights[index[0] * kPatchWidth + index[1]];
-  }
-  __host__ __device__ inline float& weight(const Index2D& index) {
-    return weights[index[0] * kPatchWidth + index[1]];
-  }
 
   // hopefully this value does not get stored for every TexVoxel this way
   static constexpr int kPatchWidth = _PatchWidth;
@@ -126,7 +116,7 @@ class TexVoxelTemplate {
   // TODO(rasaford) storing weights as floats requires 4 * kPatchWidth *
   // kPatchWidth bytes. Consider lowering this using half precision arithmetic
   // i.e. cuda_fp16.h
-  float weights[kPatchWidth * kPatchWidth];
+  float weight = 0.f;
 
   // any of six asis aligned directions the 2d texture plane is facing in 3d
   // space

@@ -140,7 +140,7 @@ float checkSphereColor(const TexLayer& tex_layer, const Vector3f& center,
     bool observed = false;
     for (int i = 0; i < TexVoxel::kPatchWidth; ++i) {
       for (int j = 0; j < TexVoxel::kPatchWidth; ++j) {
-        if (voxel.weight(Index2D(i, j)) >= 0.0f) {
+        if (voxel.weight >= 0.0f) {
           observed = true;
           EXPECT_EQ(voxel(i, j), color_2);
         }
@@ -269,7 +269,7 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
                                      const TexVoxel* voxel) -> void {
     for (size_t col = 0; col < voxel->kPatchWidth; ++col) {
       for (size_t row = 0; row < voxel->kPatchWidth; ++row) {
-        if (voxel->weight(Index2D(row, col)) > 0.f) {
+        if (voxel->weight > 0.f) {
           EXPECT_EQ((*voxel)(row, col), color);
         }
       }
@@ -320,7 +320,7 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
 
     for (int i = 0; i < TexVoxel::kPatchWidth; i++) {
       for (int j = 0; j < TexVoxel::kPatchWidth; j++) {
-        if (tex_voxel->weight(Index2D(i, j)) > 0.f) {
+        if (tex_voxel->weight > 0.f) {
           ++num_points_on_sphere_surface_observed;
           goto loop_exit;
         }

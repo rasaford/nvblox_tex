@@ -9,7 +9,7 @@ namespace nvblox {
 namespace tex {
 namespace neighbor {
 
-static constexpr int kCubeNeighbors = 27;
+static constexpr int kCubeNeighbors = 8;
 /**
  * @brief Computes the linear index from a 3D block offset
  *
@@ -19,13 +19,12 @@ static constexpr int kCubeNeighbors = 27;
  */
 __host__ __device__ inline int neighborBlockIndexFromOffset(
     const Index3D& block_offset) {
-  return Index3D(9, 3, 1).dot(block_offset + Index3D(1, 1, 1));
+  return Index3D(4, 2, 1).dot(block_offset);
 }
 
 __host__ __device__ inline Index3D blockOffsetFromNeighborIndex(
     const int linear_index) {
-  return Index3D(linear_index / 9, (linear_index % 9) / 3, linear_index % 3) -
-         Index3D(1, 1, 1);
+  return Index3D(linear_index / 4, (linear_index % 4) / 2, linear_index % 2);
 }
 
 }  // namespace neighbor
