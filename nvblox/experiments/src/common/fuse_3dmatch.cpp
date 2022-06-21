@@ -329,6 +329,7 @@ TexFuse3DMatch::TexFuse3DMatch(const std::string& base_path,
                                const float voxel_size)
     : Fuse3DMatch(base_path, timing_output_path, mesh_output_path,
                   esdf_output_path, voxel_size),
+      texture_output_path_(texture_output_path),
       // TODO(rasaford) Due to having only implemented texturing on the CPU so
       // far, we require the voxel data to be accessible on the GPU AND CPU.
       // Therefore, we use unified memory at the moment. Once texturing on the
@@ -360,9 +361,12 @@ bool TexFuse3DMatch::outputMeshPly() const {
     timing::Timer timer_write("tex3dmatch/mesh/write");
     ok &= io::outputMeshToPly(textured_mesh->mesh, mesh_output_path_);
   }
-  {
+  if (!texture_output_path_.empty()) {
     timing::Timer timer_imwrite("tex3dmatch/mesh/tex_imwrite");
+    LOG(INFO) << "Outputting texture png file to " << texture_output_path_;
     cv::imwrite(texture_output_path_, textured_mesh->texture);
+  } else {
+    LOG(INFO) << "texture_output_path is empty, skipping texture output.";
   }
   return ok;
 }
