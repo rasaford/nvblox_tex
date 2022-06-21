@@ -40,7 +40,7 @@ def plot_gpu_usage(data_dir: str):
         temperature = np.array([sample["temperature"]
                                for sample in measurements])
 
-        plt.plot(times, memory_used, label=run_id)
+        plt.plot(times, memory_util, label=run_id)
 
     plt.xlabel("$s$")
     plt.ylabel("MiB")
@@ -50,7 +50,7 @@ def plot_gpu_usage(data_dir: str):
     plt.show()
 
 
-def parse_texture_fusion_timings_file(path: str):
+def parse_texture_fusion_timings(path: str):
     with open(path, "r") as f:
         lines = f.readlines()
 
@@ -113,7 +113,7 @@ def parse_texture_fusion_timings_file(path: str):
     return entries
 
 
-def parse_nvblox_timings_file(path: str):
+def parse_nvblox_timings(path: str):
     with open(path, "r") as f:
         lines = f.readlines()
 
@@ -141,7 +141,7 @@ def plot_processing_time(data_dir: str):
     int_times_stddev = []
     file_times = []
     file_times_stddev = []
-    TIME_SCALE = 100.
+    TIME_SCALE = 1000.
     BAR_WIDTH = 0.75
     for path in sorted(glob.glob(os.path.join(data_dir, "*.timings.txt"))):
 
@@ -149,20 +149,21 @@ def plot_processing_time(data_dir: str):
 
         if run_id.startswith("NV"):
             labels.append(run_id)
-            timings = parse_nvblox_timings_file(path)
+            timings = parse_nvblox_timings(path)
             int_times.append(
                 timings["3dmatch/time_per_frame"]["mean"] * TIME_SCALE)
             int_times_stddev.append(
                 timings["3dmatch/time_per_frame"]["stddev"] * TIME_SCALE)
-            file_times.append(timings["3dmatch/file_loading"]["mean"] * TIME_SCALE)
+            file_times.append(
+                timings["3dmatch/file_loading"]["mean"] * TIME_SCALE)
             file_times_stddev.append(
                 timings["3dmatch/file_loading"]["stddev"] * TIME_SCALE)
+            print(timings["3dmatch/time_per_frame"]["total"], timings["3dmatch/time_per_frame"]["mean"])
         elif run_id.startswith("TF"):
-            timings = parse_texture_fusion_timings_file(path)
+            timings = parse_texture_fusion_timings(path)
             pprint.pprint(timings)
         else:
             raise RuntimeError(f"unknown run_id format: {run_id}")
-
 
     plt.bar(labels, file_times, width=BAR_WIDTH,
             yerr=file_times_stddev, label="File loading")
@@ -183,5 +184,5 @@ if __name__ == "__main__":
                         help="Directory of the sample")
     args = parser.parse_args()
 
-    # plot_gpu_usage(args.data_dir)
+    plot_gpu_usage(args.data_dir)
     plot_processing_time(args.data_dir)

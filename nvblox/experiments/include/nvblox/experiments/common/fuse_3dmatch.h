@@ -81,7 +81,7 @@ class Fuse3DMatch {
 
   // Initialize the image loaders based on the current base_path and
   // sequence_num
-  virtual void initializeImageLoaders(bool multithreaded = false);
+  virtual void initializeImageLoaders(bool multithreaded = true);
 
   // Output a pointcloud ESDF as PLY file.
   virtual bool outputPointcloudPly() const;
