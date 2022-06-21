@@ -111,9 +111,6 @@ Vector3f getCenterPositionForTexel(const float block_size,
   const float voxel_size = block_size / VoxelBlock<bool>::kVoxelsPerSide;
   Vector2f texel_coords =
       getTexelCoordsfromIdx(pixel_index, TexVoxel::kPatchWidth, voxel_size);
-  // scale texel coordinates such that each pixel is mapped to it's center in
-  // texel space
-  // texel_coords *= TexVoxel::kPatchWidth / (TexVoxel::kPatchWidth + 1);
   Vector3f pos;
 
   // TODO: (rasaford) is fallthrough correct here?

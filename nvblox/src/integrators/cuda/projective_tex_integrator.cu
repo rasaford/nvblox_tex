@@ -90,7 +90,7 @@ void ProjectiveTexIntegrator::integrateFrame(
   // Calls out to the child-class implementing the integation (GPU)
   timing::Timer update_blocks_timer("tex/integrate/update_blocks");
   updateBlocks(block_indices, color_frame, *synthetic_depth_image_ptr, T_L_C,
-               camera, truncation_distance_m, tex_layer);
+               camera, truncation_distance_m, tsdf_layer, tex_layer);
   update_blocks_timer.Stop();
 
   if (updated_blocks != nullptr) {
@@ -119,10 +119,173 @@ __device__ inline float computeMeasurementWeight(const TexVoxel* tex_voxel,
 __device__ inline void updateTexel(const Color& color_measured,
                                    TexVoxel* tex_voxel,
                                    const Index2D& texel_idx,
-                                   const float measurement_weight) {
-  const Color old_color = (*tex_voxel)(texel_idx);
-  (*tex_voxel)(texel_idx) = blendTwoColors(old_color, tex_voxel->weight,
-                                           color_measured, measurement_weight);
+                                   const float measurement_weight,
+                                   const float max_weight) {
+  tex_voxel->color(texel_idx) =
+      blendTwoColors(tex_voxel->color(texel_idx), tex_voxel->weight(texel_idx),
+                     color_measured, measurement_weight);
+  tex_voxel->weight(texel_idx) =
+      fmin(measurement_weight + tex_voxel->weight(texel_idx), max_weight);
+}
+
+__device__ const TsdfVoxel* getNeighborVoxelAtIndex(
+    const TsdfBlock** blocks, const Index3D& voxel_index) {
+  const int block_idx = blockIdx.x;
+
+  // create a local copy of the voxel index, since we are going to be modifying
+  // it.
+  Index3D voxel_idx = voxel_index;
+  Index3D block_offset{0, 0, 0};
+  for (int i = 0; i < 3; ++i) {
+    if (voxel_idx[i] >= TsdfBlock::kVoxelsPerSide) {
+      voxel_idx[i] -= TsdfBlock::kVoxelsPerSide;
+      block_offset[i] = 1;
+    } else if (voxel_idx[i] < 0) {
+      voxel_idx[i] += TsdfBlock::kVoxelsPerSide;
+      block_offset[i] = -1;
+    }
+  }
+  // get the neighboring voxel either from a neighboring block if it's outside
+  // the current one, or get it directly from the current block
+  int linear_neighbor_idx =
+      tex::neighbor::neighborBlockIndexFromOffset(block_offset);
+  const TsdfBlock* block =
+      blocks[block_idx * tex::neighbor::kCubeNeighbors + linear_neighbor_idx];
+
+  if (block == nullptr) {
+    return nullptr;
+  }
+  return &block->voxels[voxel_idx.x()][voxel_idx.y()][voxel_idx.z()];
+}
+
+__device__ bool bilinearInterpolation(
+    const TsdfBlock** blocks, const Index3D& voxel_index,
+    const Index3D& offset1, const Index3D& offset2, const Vector3f& position,
+    const Vector3f& voxel_position, const float voxel_size, float* sdf) {
+  // the voxels are named in the following way regarding to the given base
+  // voxel_index (v0)
+  // clang-format off
+  // v3 ---------- v1
+  // |              |
+  // |              |
+  // |              dir1
+  // |              |
+  // |              |
+  // v2 -- dir2 -- v0
+  // clang-format on
+
+  // clang-format off
+  const TsdfVoxel* v0 = getNeighborVoxelAtIndex(blocks, voxel_index);
+  const TsdfVoxel* v1 = getNeighborVoxelAtIndex(blocks, voxel_index + offset1);
+  const TsdfVoxel* v2 = getNeighborVoxelAtIndex(blocks, voxel_index + offset2);
+  const TsdfVoxel* v3 = getNeighborVoxelAtIndex(blocks, voxel_index + offset1 + offset2);
+  // clang-fromat on
+
+  if (v0 == nullptr || v1 == nullptr || v2 == nullptr || v3 == nullptr) {
+    return false;
+  }
+
+  Vector3f position_dir = (position - voxel_position) / voxel_size;
+  float d1 = position_dir.dot(offset1.cast<float>());
+  float d2 = position_dir.dot(offset2.cast<float>());
+  // printf("d1: %f, d2: %f, voxel_size: %f, pos_norm: %f\n", d1, d2, voxel_size, position_dir.norm());
+  // interpolate first along direction1
+  float sdf1_1 = d1 * v0->distance + (1.f - d1) * v1->distance;
+  float sdf1_2 = d1 * v2->distance + (1.f - d1) * v3->distance;
+  // interpolation along direction2
+  *sdf = d2 * sdf1_1 + (1.f - d2) * sdf1_2;
+  return true;
+}
+
+__device__ bool trilinearSurfaceInterpolation(
+    const TsdfBlock** blocks, const float voxel_size, const Vector3f& position,
+    const Vector3f& voxel_center, const TexVoxel::Dir& direction,
+    const float block_size, float* distance) {
+  const Index3D voxel_idx = Index3D(threadIdx.z, threadIdx.y, threadIdx.x);
+
+  // Get the current voxel via the accessing function, since we need to convert
+  // to a linear index when we want to read from the 2d blocks array
+  const TsdfVoxel* current_voxel = getNeighborVoxelAtIndex(blocks, voxel_idx);
+
+  if (current_voxel == nullptr) {
+    return false;
+  }
+
+  TexVoxel::Dir dir = direction;
+  bool positive_dir = true;
+  Index3D dir_vec = tex::texDirToWorldVector(dir).cast<int>();
+
+  const TsdfVoxel* neighbor_voxel =
+      getNeighborVoxelAtIndex(blocks, voxel_idx + dir_vec);
+
+  // if the current and neighboring voxels are on the same side of the SDF
+  // boundary, seach in the other direction to find the SDF boundary
+  if (neighbor_voxel == nullptr ||
+      tex::isSameSign<float>(current_voxel->distance,
+                             neighbor_voxel->distance)) {
+    dir_vec = -dir_vec;
+    positive_dir = false;
+    dir = tex::negateDir(dir);
+    neighbor_voxel = getNeighborVoxelAtIndex(blocks, voxel_idx + dir_vec);
+
+    // If the SDF did not change sign in any direction along the given dir, the
+    // current voxel cannot be zero crossing along it.
+    if (neighbor_voxel == nullptr ||
+        tex::isSameSign<float>(current_voxel->distance,
+                               neighbor_voxel->distance)) {
+      return false;
+    }
+  }
+
+  // linear interpolation along each axis
+  Vector3f pos_dir = position - voxel_center;
+  Vector3f pos_offset = voxel_size * dir_vec.cast<float>();
+  // printf("dir: %d,  pos_dir: (%f, %f, %f)\n", dir, pos_dir[0], pos_dir[1], pos_dir[2]);
+  Index3D offset1, offset2;
+  switch (dir) {
+    case TexVoxel::Dir::X_PLUS:
+    case TexVoxel::Dir::X_MINUS:
+      offset1 = pos_dir[1] > 0 ? Index3D(0, 1, 0) : Index3D(0, -1, 0);
+      offset2 = pos_dir[2] > 0 ? Index3D(0, 0, 1) : Index3D(0, 0, -1);
+      // offset1 = true ? Index3D(0, 1, 0) : Index3D(0, -1, 0);
+      // offset2 = true ? Index3D(0, 0, 1) : Index3D(0, 0, -1);
+      break;
+    case TexVoxel::Dir::Y_PLUS:
+    case TexVoxel::Dir::Y_MINUS:
+      offset1 = pos_dir[0] > 0 ? Index3D(1, 0, 0) : Index3D(-1, 0, 0);
+      offset2 = pos_dir[2] > 0 ? Index3D(0, 0, 1) : Index3D(0, 0, -1);
+      // offset1 = true ? Index3D(1, 0, 0) : Index3D(-1, 0, 0);
+      // offset2 = true ? Index3D(0, 0, 1) : Index3D(0, 0, -1);
+      break;
+    case TexVoxel::Dir::Z_PLUS:
+    case TexVoxel::Dir::Z_MINUS:
+      offset1 = pos_dir[0] > 0 ? Index3D(1, 0, 0) : Index3D(-1, 0, 0);
+      offset2 = pos_dir[1] > 0 ? Index3D(0, 1, 0) : Index3D(0, -1, 0);
+      // offset1 = true ? Index3D(1, 0, 0) : Index3D(-1, 0, 0);
+      // offset2 = true ? Index3D(0, 1, 0) : Index3D(0, -1, 0);
+      break;
+    default:
+      return false;
+  }
+
+  float sdf1 = 0.f, sdf2 = 0.f;
+  bool valid = bilinearInterpolation(blocks, voxel_idx, offset1, offset2,
+                                     position, voxel_center, voxel_size, &sdf1);
+  valid &= bilinearInterpolation(blocks, voxel_idx + dir_vec, offset1, offset2,
+                                 position + pos_offset,
+                                 voxel_center + pos_offset, voxel_size, &sdf2);
+  // if the current voxel does not have enough neighboring voxels to perform
+  // each 2D interpolation, the resulting sdf valus are invalid and we abort
+  // here. Also if the sdf has the same sign along the interpolated ray, there
+  // cannot be a surface intersection along it.
+  if (!valid || tex::isSameSign<float>(sdf1, sdf2)) return false;
+
+  // estimate the zero crossing point based on the sdf values along the
+  // interpolated ray. From the zero point along the ray we then compute the
+  // distance from the given position along the ray to the surface itersection
+  *distance = voxel_size * fabs(sdf1) / (fabs(sdf1) + fabs(sdf2));
+  *distance = positive_dir ? *distance : -*distance;
+  return true;
 }
 
 __global__ void integrateBlocks(
@@ -132,7 +295,7 @@ __global__ void integrateBlocks(
     const Transform T_C_L, const float block_size,
     const float truncation_distance_m, const float max_weight,
     const float max_integration_distance, const int depth_subsample_factor,
-    TexBlock** block_device_ptrs) {
+    const TsdfBlock** tsdf_blocks, TexBlock** tex_ptrs) {
   // TODO (rasaford)
   // - Here we need to determine the TexVoxel direction first. (one projection
   // is enough)
@@ -177,8 +340,8 @@ __global__ void integrateBlocks(
   // NOTE(alexmillane): Note that we've reverse the voxel indexing order such
   // that adjacent threads (x-major) access adjacent memory locations in the
   // block (z-major).
-  TexVoxel* voxel_ptr = &(block_device_ptrs[blockIdx.x]
-                              ->voxels[threadIdx.z][threadIdx.y][threadIdx.x]);
+  TexVoxel* voxel_ptr =
+      &(tex_ptrs[blockIdx.x]->voxels[threadIdx.z][threadIdx.y][threadIdx.x]);
 
   // NOTE(rasaford): If the current voxel has not been assigned a texture plane
   // direction, it must not be on the truncation band --> skip it
@@ -188,45 +351,60 @@ __global__ void integrateBlocks(
 
   // Update the weight of each tex voxel once per voxel (instead of once per
   // texel) as the average of the new and old weights
-  Vector3f voxel_center = getCenterPostionFromBlockIndexAndVoxelIndex(
-      block_size, block_indices_device_ptr[blockIdx.x],
-      Index3D(threadIdx.z, threadIdx.y, threadIdx.x));
-  float measurement_weight =
-      computeMeasurementWeight(voxel_ptr, T_C_L, voxel_center);
+  const Index3D& block_idx = block_indices_device_ptr[blockIdx.x];
+  const Index3D voxel_idx = Index3D(threadIdx.z, threadIdx.y, threadIdx.x);
+  const Vector3f voxel_center = getCenterPostionFromBlockIndexAndVoxelIndex(
+      block_size, block_idx, voxel_idx);
 
-  Color image_value;
-  Index2D texel_idx;
+  // float measurement_weight =
+  //     computeMeasurementWeight(voxel_ptr, T_C_L, voxel_center);
+  float measurement_weight = 1.f;
 
-  // loop over all colors in the TexVoxel patch
+  Color image_value = Color::Black();
+  Index2D texel_idx{0, 0};
+  Vector3f texel_pos = Vector3f::Zero();
+  Vector3f surface_pos = Vector3f::Zero();
   for (int row = 0; row < voxel_ptr->kPatchWidth; ++row) {
     for (int col = 0; col < voxel_ptr->kPatchWidth; ++col) {
       texel_idx = Index2D(row, col);
       image_value = Color::Black();
+
+      // Orthogonal projection of texVoxel Tile to SDF surface
+      texel_pos = getCenterPositionForTexel(block_size, block_idx, voxel_idx,
+                                            texel_idx, voxel_ptr->dir);
+
+      float distance;
+      if (!trilinearSurfaceInterpolation(
+              tsdf_blocks, block_size / TsdfBlock::kVoxelsPerSide, texel_pos,
+              voxel_center, voxel_ptr->dir, block_size, &distance)) {
+        continue;
+      }
+      surface_pos =
+          texel_pos + distance * tex::texDirToWorldVector(voxel_ptr->dir);
+
       // Project the current texel_idx to image space. If it's outside the
       // image, go to the next texel.
-      if (!projectThreadTexel(block_indices_device_ptr, camera, T_C_L,
-                              block_size, texel_idx, voxel_ptr->dir, &u_px,
-                              &voxel_depth_m))
+      surface_pos = T_C_L * surface_pos;
+      if (!camera.project(surface_pos, &u_px)) {
         continue;
+      }
 
       if (!interpolation::interpolate2DLinear<Color>(
-              color_image, u_px, color_rows, color_cols, &image_value))
+              color_image, u_px, color_rows, color_cols, &image_value)) {
         continue;
+      }
 
-      updateTexel(image_value, voxel_ptr, texel_idx, measurement_weight);
+      updateTexel(image_value, voxel_ptr, texel_idx, measurement_weight, max_weight);
     }
   }
-  // Since the voxel_weight is read when updating the texels, it must be updated
-  // after all texels
-  voxel_ptr->weight =
-      fmin(fmax(measurement_weight, voxel_ptr->weight), max_weight);
 }
 
 void ProjectiveTexIntegrator::updateBlocks(
     const std::vector<Index3D>& block_indices, const ColorImage& color_frame,
     const DepthImage& depth_frame, const Transform& T_L_C, const Camera& camera,
-    const float truncation_distance_m, TexLayer* layer_ptr) {
-  CHECK_NOTNULL(layer_ptr);
+    const float truncation_distance_m, const TsdfLayer& tsdf_layer,
+    TexLayer* tex_layer_ptr) {
+  CHECK_NOTNULL(tex_layer_ptr);
   CHECK_EQ(color_frame.rows() % depth_frame.rows(), 0);
   CHECK_EQ(color_frame.cols() % depth_frame.cols(), 0);
 
@@ -237,22 +415,35 @@ void ProjectiveTexIntegrator::updateBlocks(
   const int depth_subsampling_factor = color_frame.rows() / depth_frame.rows();
   CHECK_EQ(color_frame.cols() / depth_frame.cols(), depth_subsampling_factor);
 
+  tsdf_block_ptrs_host_.resize(block_indices.size() *
+                               tex::neighbor::kCubeNeighbors);
+  tsdf_block_ptrs_device_.resize(block_indices.size() *
+                                 tex::neighbor::kCubeNeighbors);
+  for (int i = 0; i < block_indices.size(); ++i) {
+    for (int j = 0; j < tex::neighbor::kCubeNeighbors; ++j) {
+      Index3D offset = tex::neighbor::blockOffsetFromNeighborIndex(j);
+      tsdf_block_ptrs_host_[i * tex::neighbor::kCubeNeighbors + j] =
+          tsdf_layer.getBlockAtIndex(block_indices[i] + offset).get();
+    }
+  }
+  tsdf_block_ptrs_device_ = tsdf_block_ptrs_host_;
+
   // Expand the buffers when needed
   if (num_blocks > block_indices_device_.size()) {
     const int new_size = static_cast<int>(kBufferExpansionFactor * num_blocks);
     block_indices_device_.reserve(new_size);
-    block_ptrs_device_.reserve(new_size);
+    tex_block_ptrs_device_.reserve(new_size);
     block_indices_host_.reserve(new_size);
-    block_ptrs_host_.reserve(new_size);
+    tex_block_ptrs_host_.reserve(new_size);
   }
 
   // Stage on the host pinned memory
   block_indices_host_ = block_indices;
-  block_ptrs_host_ = getBlockPtrsFromIndices(block_indices, layer_ptr);
+  tex_block_ptrs_host_ = getBlockPtrsFromIndices(block_indices, tex_layer_ptr);
 
   // Transfer to the device
   block_indices_device_ = block_indices_host_;
-  block_ptrs_device_ = block_ptrs_host_;
+  tex_block_ptrs_device_ = tex_block_ptrs_host_;
 
   // We need the inverse transform in the kernel
   const Transform T_C_L = T_L_C.inverse();
@@ -272,17 +463,16 @@ void ProjectiveTexIntegrator::updateBlocks(
       depth_frame.rows(),
       depth_frame.cols(),
       T_C_L,
-      layer_ptr->block_size(),
+      tex_layer_ptr->block_size(),
       truncation_distance_m,
       max_weight_,
       max_integration_distance_m_,
       depth_subsampling_factor,
-      block_ptrs_device_.data());
+      tsdf_block_ptrs_device_.data(),
+      tex_block_ptrs_device_.data());
   // clang-format on
+  checkCudaErrors(cudaStreamSynchronize(integration_stream_));
   checkCudaErrors(cudaPeekAtLastError());
-
-  // Finish processing of the frame before returning control
-  finish();
 }
 
 std::vector<Index3D>

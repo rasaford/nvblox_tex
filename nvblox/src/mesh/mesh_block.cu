@@ -91,6 +91,7 @@ void MeshBlockUV::clear() {
   uvs.clear();
   patches.clear();
   vertex_patches.clear();
+  known_patch_indices.clear();
 }
 
 void MeshBlockUV::expandUVsToMatchVertices() {
