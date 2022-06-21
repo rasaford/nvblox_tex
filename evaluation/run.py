@@ -64,6 +64,10 @@ def run_experiment(run_id: str, binary_path: str, dataset_path: str, out_dir: st
 
     config_file = os.path.join(out_dir, f"{run_id}.config.json")
     mesh_file = os.path.join(out_dir, f"{run_id}.ply")
+    if os.path.exists(config_file):
+        print(f"Skipping run {run_id}, since it already exists")
+        return
+
     timing_file = os.path.join(out_dir, f"{run_id}.timings.txt")
     gpu_usage_file = os.path.join(out_dir, f"{run_id}.gpu_usage.json")
     stdout_file = os.path.join(out_dir, f"{run_id}.stdout.txt")
@@ -99,11 +103,19 @@ def run_experiment(run_id: str, binary_path: str, dataset_path: str, out_dir: st
     print(json.dumps(config, indent=4, sort_keys=True))
 
     monitor = GPUMonitor(GPU_MONITOR_DELAY, cuda_device_id)
-    process_output = subprocess.check_output(
-        list(config["direct"].values()) +
-        [f"--{k}={v}" for k, v in config["params"].items()])
-    # TODO: add env vars back to subprocess command
-    # env={**os.environ, **config["env"]})
+    try:
+        command = list(config["direct"].values()) + \
+            [f"--{k}={v}" for k, v in config["params"].items()]
+
+        print(f"Executing command {' '.join(command)}")
+        process_output = subprocess.check_output(
+            command, stderr=subprocess.STDOUT).decode()
+        # TODO: add env vars back to subprocess command
+        # env={**os.environ, **config["env"]})
+    except subprocess.CalledProcessError as e:
+        # ignore errors as they are already in stdout / -err.txt
+        pass
+    print("Done writing result files")
     monitor.stop()
 
     with open(gpu_usage_file, "w") as f:
@@ -131,13 +143,14 @@ def experiment_1(dataset_root: str):
                    CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.02, texel_size=1)
     run_experiment("NV_Q1_03", NV_Q1_01_BIN,
                    CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.01, texel_size=1)
-    run_experiment("NV_Q1_05", NV_Q1_01_BIN,
+    run_experiment("NV_Q1_04", NV_Q1_01_BIN,
                    CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.005, texel_size=1)
 
 
 def experiment_2(dataset_root: str):
     texel_sizes = [1, 4, 8, 16]
-    voxel_sizes = [0.2, 0.1, 0.05, 0.02]
+    voxel_sizes = [0.1, 0.05, 0.02, 0.01]
+
     DATASET = os.path.join(dataset_root, "corridor_handheld_L515")
     OUT_DIR = os.path.join(BASE_EXPERIMENT_DIR, "Q2")
 
@@ -153,11 +166,12 @@ def experiment_2(dataset_root: str):
 
 def experiment_3(dataset_root: str):
     run_id = "NVT_Q3_01"
-    NVT_Q3_01_BIN = build_experiment(run_id, target="tex_integration",
-                                     texel_size=4)
     DATASET = os.path.join(dataset_root, "corridor_ANYmal_L515")
     OUT_DIR = os.path.join(BASE_EXPERIMENT_DIR, "Q3")
-    run_experiment(run_id, NVT_Q3_01_BIN, DATASET, OUT_DIR, voxel_size=0.05)
+
+    NVT_Q3_01_BIN = build_experiment(
+        run_id, target="tex_integration", texel_size=4)
+    run_experiment(run_id, NVT_Q3_01_BIN, DATASET, OUT_DIR, voxel_size=0.02)
 
 
 def experiment_4(dataset_root: str):
@@ -173,7 +187,11 @@ if __name__ == "__main__":
     parser.add_argument("--dataset_root", type=str, required=True,
                         help="root dir of the datasets in 3dmatch format")
     parser.add_argument("--rebuild", action="store_true",
-                        help="If the required binaries for the run should be rebuilt")
+                        help="Required all binaries for the executed runs")
+    # TODO: add rerun functionality if needed
+    parser.add_argument("--rerun", type=str, default="",
+                        help="Rebuild the run(s) with the given ids. "
+                        "Needs to be passed as a comma separated list with no spaces.")
     args = parser.parse_args()
 
     if args.experiment == "1":
