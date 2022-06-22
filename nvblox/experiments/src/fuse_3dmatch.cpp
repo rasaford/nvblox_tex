@@ -31,7 +31,7 @@ DEFINE_string(esdf_output_path, "",
               "File in which to save the ESDF pointcloud.");
 DEFINE_string(mesh_output_path, "", "File in which to save the surface mesh.");
 
-DEFINE_double(voxel_size, 0.0f, "Voxel resolution in meters.");
+DEFINE_double(voxel_size, 0.0, "Voxel resolution in meters.");
 DEFINE_int32(tsdf_frame_subsampling, 0,
              "By what amount to subsample the TSDF frames. A subsample of 3 "
              "means only every 3rd frame is taken.");
@@ -48,40 +48,20 @@ int main(int argc, char* argv[]) {
   FLAGS_alsologtostderr = true;
   google::InstallFailureSignalHandler();
 
-  nvblox::experiments::Fuse3DMatch fuser =
-      nvblox::experiments::Fuse3DMatch::createFromCommandLineArgs(argc, argv);
-  if (FLAGS_num_frames > 0) {
-    fuser.num_frames_to_integrate_ = FLAGS_num_frames;
-  }
-  if (FLAGS_start_frame > 0) {
-    fuser.start_frame_ = FLAGS_start_frame;
-  }
-  if (!FLAGS_timing_output_path.empty()) {
-    fuser.timing_output_path_ = FLAGS_timing_output_path;
-  }
-  if (!FLAGS_esdf_output_path.empty()) {
-    fuser.esdf_output_path_ = FLAGS_esdf_output_path;
-  }
-  if (!FLAGS_mesh_output_path.empty()) {
-    fuser.mesh_output_path_ = FLAGS_mesh_output_path;
-  }
-  if (FLAGS_voxel_size > 0.0f) {
-    fuser.setVoxelSize(static_cast<float>(FLAGS_voxel_size));
-  }
-  if (FLAGS_tsdf_frame_subsampling > 0) {
-    fuser.setTsdfFrameSubsampling(FLAGS_tsdf_frame_subsampling);
-  }
-  if (FLAGS_color_frame_subsampling > 0) {
-    fuser.setColorFrameSubsampling(FLAGS_color_frame_subsampling);
-  }
-  if (FLAGS_mesh_frame_subsampling > 0) {
-    fuser.setMeshFrameSubsampling(FLAGS_mesh_frame_subsampling);
-  }
-  if (FLAGS_esdf_frame_subsampling > 0) {
-    fuser.setEsdfFrameSubsampling(FLAGS_esdf_frame_subsampling);
-  }
+  nvblox::experiments::Fuse3DMatchOptions options{FLAGS_num_frames,
+                                                  FLAGS_start_frame,
+                                                  FLAGS_timing_output_path,
+                                                  FLAGS_esdf_output_path,
+                                                  FLAGS_mesh_output_path,
+                                                  static_cast<float>(FLAGS_voxel_size),
+                                                  FLAGS_tsdf_frame_subsampling,
+                                                  FLAGS_color_frame_subsampling,
+                                                  FLAGS_mesh_frame_subsampling,
+                                                  FLAGS_esdf_frame_subsampling};
 
-  fuser.initializeImageLoaders();
-  // Make sure the layers are the correct resolution.
+  nvblox::experiments::Fuse3DMatch fuser =
+      nvblox::experiments::Fuse3DMatch::createFromCommandLineArgs(argc, argv,
+                                                                  options);
+
   return fuser.run();
 }

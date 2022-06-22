@@ -33,12 +33,14 @@ namespace experiments {
 Fuse3DMatch::Fuse3DMatch(const std::string& base_path,
                          const std::string& timing_output_path,
                          const std::string& mesh_output_path,
-                         const std::string& esdf_output_path)
+                         const std::string& esdf_output_path,
+                         const float voxel_size)
     : base_path_(base_path),
       timing_output_path_(timing_output_path),
       mesh_output_path_(mesh_output_path),
       esdf_output_path_(esdf_output_path),
-      mapper_(voxel_size_m_) {
+      voxel_size_m_(voxel_size),
+      mapper_(voxel_size) {
   initializeImageLoaders();
   // Params
   mapper_.mesh_integrator().min_weight() = 2.0f;
@@ -182,7 +184,7 @@ bool Fuse3DMatch::integrateFrame(const int frame_number) {
   // Check that the loaded data doesn't contain NaNs or a faulty rotation
   // matrix. This does occur. If we find one, skip that frame and move to the
   // next.
-  constexpr float kRotationMatrixDetEpsilon = 1e-4;
+  constexpr float kRotationMatrixDetEpsilon = 1e-2;
   if (!T_L_C.matrix().allFinite() || !camera_intrinsics.allFinite() ||
       std::abs(T_L_C.matrix().block<3, 3>(0, 0).determinant() - 1.0f) >
           kRotationMatrixDetEpsilon) {
@@ -249,11 +251,13 @@ bool Fuse3DMatch::outputTimingsToFile() const {
   return true;
 }
 
-Fuse3DMatch Fuse3DMatch::createFromCommandLineArgs(int argc, char* argv[]) {
+Fuse3DMatch Fuse3DMatch::createFromCommandLineArgs(
+    int argc, char* argv[], const Fuse3DMatchOptions& options) {
   std::string base_path = "";
   std::string timing_output_path = "./3dmatch_timings.txt";
   std::string esdf_output_path = "";
   std::string mesh_output_path = "";
+  float voxel_size = 0.05f;
   if (argc < 2) {
     // Try out running on the test datasets.
     base_path = "../tests/data/3dmatch";
@@ -263,7 +267,10 @@ Fuse3DMatch Fuse3DMatch::createFromCommandLineArgs(int argc, char* argv[]) {
     base_path = argv[1];
     LOG(INFO) << "Loading 3DMatch files from " << base_path;
   }
+
   // Optionally overwrite the output paths.
+  // These parameters are used in the constructor of the fuser and therefore
+  // need to be known before we construct the object
   if (argc >= 3) {
     timing_output_path = argv[2];
   }
@@ -273,9 +280,43 @@ Fuse3DMatch Fuse3DMatch::createFromCommandLineArgs(int argc, char* argv[]) {
   if (argc >= 4) {
     mesh_output_path = argv[4];
   }
+  if (!options.timing_output_path.empty()) {
+    timing_output_path = options.timing_output_path;
+  }
+  if (!options.esdf_output_path.empty()) {
+    esdf_output_path = options.esdf_output_path;
+  }
+  if (!options.mesh_output_path.empty()) {
+    mesh_output_path = options.mesh_output_path;
+  }
+  if (options.voxel_size > 0.f) {
+    voxel_size = options.voxel_size;
+  }
 
   nvblox::experiments::Fuse3DMatch fuser(base_path, timing_output_path,
-                                         mesh_output_path, esdf_output_path);
+                                         mesh_output_path, esdf_output_path,
+                                         voxel_size);
+
+  // these parameters are not passed on to other object and can therefore be set
+  // after construction of the fuser
+  if (options.num_frames > 0) {
+    fuser.num_frames_to_integrate_ = options.num_frames;
+  }
+  if (options.start_frame > 0) {
+    fuser.start_frame_ = options.start_frame;
+  }
+  if (options.tsdf_frame_subsampling > 0) {
+    fuser.setTsdfFrameSubsampling(options.tsdf_frame_subsampling);
+  }
+  if (options.color_frame_subsampling > 0) {
+    fuser.setColorFrameSubsampling(options.color_frame_subsampling);
+  }
+  if (options.mesh_frame_subsampling > 0) {
+    fuser.setMeshFrameSubsampling(options.mesh_frame_subsampling);
+  }
+  if (options.esdf_frame_subsampling > 0) {
+    fuser.setEsdfFrameSubsampling(options.esdf_frame_subsampling);
+  }
 
   return fuser;
 }
@@ -284,15 +325,17 @@ TexFuse3DMatch::TexFuse3DMatch(const std::string& base_path,
                                const std::string& timing_output_path,
                                const std::string& mesh_output_path,
                                const std::string& esdf_output_path,
-                               const std::string& texture_output_path)
+                               const std::string& texture_output_path,
+                               const float voxel_size)
     : Fuse3DMatch(base_path, timing_output_path, mesh_output_path,
-                  esdf_output_path),
+                  esdf_output_path, voxel_size),
+      texture_output_path_(texture_output_path),
       // TODO(rasaford) Due to having only implemented texturing on the CPU so
       // far, we require the voxel data to be accessible on the GPU AND CPU.
       // Therefore, we use unified memory at the moment. Once texturing on the
       // GPU is implemented this should be switched back to MemoryType::kDevice
       // to avoid copying unnecessarily to avoid copying unnecessarily.
-      mapper_(voxel_size_m_, MemoryType::kUnified) {
+      mapper_(voxel_size, MemoryType::kUnified) {
   // Params
   mapper_.mesh_integrator().min_weight() = 2.0f;
   mapper_.tex_integrator().max_integration_distance_m(5.0f);
@@ -318,9 +361,12 @@ bool TexFuse3DMatch::outputMeshPly() const {
     timing::Timer timer_write("tex3dmatch/mesh/write");
     ok &= io::outputMeshToPly(textured_mesh->mesh, mesh_output_path_);
   }
-  {
+  if (!texture_output_path_.empty()) {
     timing::Timer timer_imwrite("tex3dmatch/mesh/tex_imwrite");
+    LOG(INFO) << "Outputting texture png file to " << texture_output_path_;
     cv::imwrite(texture_output_path_, textured_mesh->texture);
+  } else {
+    LOG(INFO) << "texture_output_path is empty, skipping texture output.";
   }
   return ok;
 }
@@ -420,13 +466,14 @@ bool TexFuse3DMatch::integrateFrame(const int frame_number) {
   return true;
 }
 
-TexFuse3DMatch TexFuse3DMatch::createFromCommandLineArgs(int argc,
-                                                         char* argv[]) {
+TexFuse3DMatch TexFuse3DMatch::createFromCommandLineArgs(
+    int argc, char* argv[], const TexFuse3DMatchOptions& options) {
   std::string base_path = "";
   std::string timing_output_path = "./3dmatch_timings.txt";
   std::string esdf_output_path = "";
   std::string mesh_output_path = "";
   std::string texture_output_path = "";
+  float voxel_size = 0.05f;
   if (argc < 2) {
     // Try out running on the test datasets.
     base_path = "../tests/data/3dmatch";
@@ -437,6 +484,8 @@ TexFuse3DMatch TexFuse3DMatch::createFromCommandLineArgs(int argc,
     LOG(INFO) << "Loading 3DMatch files from " << base_path;
   }
   // Optionally overwrite the output paths.
+  // These parameters are used in the constructor of the fuser and therefore
+  // need to be known before we construct the object
   if (argc >= 3) {
     timing_output_path = argv[2];
   }
@@ -449,10 +498,46 @@ TexFuse3DMatch TexFuse3DMatch::createFromCommandLineArgs(int argc,
   if (argc >= 5) {
     texture_output_path = argv[5];
   }
+  if (!options.timing_output_path.empty()) {
+    timing_output_path = options.timing_output_path;
+  }
+  if (!options.esdf_output_path.empty()) {
+    esdf_output_path = options.esdf_output_path;
+  }
+  if (!options.mesh_output_path.empty()) {
+    mesh_output_path = options.mesh_output_path;
+  }
+  if (!options.texture_output_path.empty()) {
+    texture_output_path = options.texture_output_path;
+  }
+  if (options.voxel_size > 0.f) {
+    voxel_size = options.voxel_size;
+  }
 
   nvblox::experiments::TexFuse3DMatch fuser(base_path, timing_output_path,
                                             mesh_output_path, esdf_output_path,
-                                            texture_output_path);
+                                            texture_output_path, voxel_size);
+
+  // these parameters are not passed on to other object and can therefore be set
+  // after construction of the fuser
+  if (options.num_frames > 0) {
+    fuser.num_frames_to_integrate_ = options.num_frames;
+  }
+  if (options.start_frame > 0) {
+    fuser.start_frame_ = options.start_frame;
+  }
+  if (options.tsdf_frame_subsampling > 0) {
+    fuser.setTsdfFrameSubsampling(options.tsdf_frame_subsampling);
+  }
+  if (options.color_frame_subsampling > 0) {
+    fuser.setColorFrameSubsampling(options.color_frame_subsampling);
+  }
+  if (options.mesh_frame_subsampling > 0) {
+    fuser.setMeshFrameSubsampling(options.mesh_frame_subsampling);
+  }
+  if (options.esdf_frame_subsampling > 0) {
+    fuser.setEsdfFrameSubsampling(options.esdf_frame_subsampling);
+  }
 
   return fuser;
 }

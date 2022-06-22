@@ -158,6 +158,15 @@ else()
     set_target_properties(nvblox_lib PROPERTIES CMAKE_CUDA_FLAGS ${CMAKE_CUDA_FLAGS})
     set_target_properties(nvblox_lib PROPERTIES EXPORT_PROPERTIES CMAKE_CUDA_FLAGS)
 endif()
+
+# Texel Size is currently defined as a preprocessing parameter, therefore we have to set it here.
+# Also, since nvblox_cuda_check and nvblox_gpu_hash import voxel.h but don't directly depend on nvblox_lib, we have to set their TEXEL_SIZE parameter separately 
+if( TEXEL_SIZE )
+    message("Using texel size: ${TEXEL_SIZE}")
+    target_compile_definitions(nvblox_lib PUBLIC TEXEL_SIZE=${TEXEL_SIZE})
+    target_compile_definitions(nvblox_cuda_check PUBLIC TEXEL_SIZE=${TEXEL_SIZE})
+    target_compile_definitions(nvblox_gpu_hash PUBLIC TEXEL_SIZE=${TEXEL_SIZE})
+endif()
 # if(CMAKE_BUILD_TYPE STREQUAL "Debug") 
 #     target_compile_options(nvblox_lib PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:-G>)
 # endif()
