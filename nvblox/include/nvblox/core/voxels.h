@@ -125,7 +125,7 @@ class TexVoxelTemplate {
   float dir_weight = 0.;
 
   // static parameter
-  static constexpr float DIR_THRESHOLD = 0.7f;
+  static constexpr float DIR_THRESHOLD = 0.9f;
 };
 
 // For convenience we define this non-templated version of TexVoxel.

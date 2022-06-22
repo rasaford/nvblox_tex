@@ -15,6 +15,7 @@ typedef Eigen::Matrix<int, 7, 1> Vector7i;
 
 void updateTexVoxelDirectionsGPU(
     device_vector<const TsdfBlock*> neighbor_blocks,
+    const device_vector<Index3D> block_indices,
     device_vector<TexBlock*>& tex_block_ptrs, const int num_blocks,
     const cudaStream_t stream, const float block_size, const float voxel_size);
 

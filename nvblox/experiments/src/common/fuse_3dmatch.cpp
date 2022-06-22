@@ -338,8 +338,8 @@ TexFuse3DMatch::TexFuse3DMatch(const std::string& base_path,
       mapper_(voxel_size, MemoryType::kUnified) {
   // Params
   mapper_.mesh_integrator().min_weight() = 2.0f;
-  mapper_.tex_integrator().max_integration_distance_m(5.0f);
-  mapper_.tsdf_integrator().max_integration_distance_m(5.0f);
+  mapper_.tex_integrator().max_integration_distance_m(10.0f);
+  mapper_.tsdf_integrator().max_integration_distance_m(10.0f);
   mapper_.tsdf_integrator().frustum_calculator().raycast_subsampling_factor(4);
   mapper_.esdf_integrator().max_distance_m() = 4.0f;
   mapper_.esdf_integrator().min_weight() = 2.0f;

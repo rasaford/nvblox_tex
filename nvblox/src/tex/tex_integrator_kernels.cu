@@ -56,9 +56,22 @@ __device__ const TsdfVoxel* getVoxel(const TsdfBlock** blocks,
   return &block->voxels[voxel_idx.x()][voxel_idx.y()][voxel_idx.z()];
 }
 
+/**
+ * @brief
+ *
+ * @param blocks
+ * @param position has to be inside the givne by voxel_idx
+ * @param voxel_idx
+ * @param dist
+ * @return __device__
+ */
 __device__ bool trilinearInterpolation(const TsdfBlock** blocks,
-                                       const Index3D voxel_idx, float* dist) {
-  const Vector3f weight{0.5f, 0.5f, 0.5f};
+                                       const Vector3f& position,
+                                       const Index3D voxel_idx,
+                                       const float voxel_size, float* dist) {
+  const Vector3f normalized_pos = position / voxel_size;
+  const Vector3f weight =
+      normalized_pos.array() - normalized_pos.array().floor();
 
   (*dist) = 0.f;
   const TsdfVoxel* v;
@@ -90,12 +103,14 @@ __device__ bool trilinearInterpolation(const TsdfBlock** blocks,
  */
 __device__ bool computeTSDFGradient(const TsdfBlock** neighbor_blocks,
                                     const Index3D& voxel_idx,
+                                    const Vector3f& position,
                                     const float voxel_size,
                                     Vector3f& gradient) {
   // voxel size is block size divided by number of blocks per side
   // const float voxel_size =
   //     block_size / static_cast<float>(tsdf_block->kVoxelsPerSide);
-  const float voxel_size_2x = 2.0f * voxel_size;
+  const float voxel_size_half = 0.5f * voxel_size;
+  const float v_quarter = 0.25f * voxel_size;
   float dist_x_plus = 0, dist_x_minus = 0, dist_y_plus = 0, dist_y_minus = 0,
         dist_z_plus = 0, dist_z_minus = 0;
   bool valid = true;
@@ -103,12 +118,12 @@ __device__ bool computeTSDFGradient(const TsdfBlock** neighbor_blocks,
   const TsdfVoxel* v;
   // get tsdf values for each neighboring voxel to the current one
   // clang-format off
-  valid &= trilinearInterpolation(neighbor_blocks, voxel_idx + Index3D(1, 0, 0), &dist_x_plus);
-  valid &= trilinearInterpolation(neighbor_blocks, voxel_idx + Index3D(0, 1, 0), &dist_y_plus);
-  valid &= trilinearInterpolation(neighbor_blocks, voxel_idx + Index3D(0, 0, 1), &dist_z_plus);
-  valid &= trilinearInterpolation(neighbor_blocks, voxel_idx - Index3D(1, 0, 0), &dist_x_minus);
-  valid &= trilinearInterpolation(neighbor_blocks, voxel_idx - Index3D(0, 1, 0), &dist_y_minus);
-  valid &= trilinearInterpolation(neighbor_blocks, voxel_idx - Index3D(0, 0, 1), &dist_z_minus);
+  valid &= trilinearInterpolation(neighbor_blocks, position + Vector3f(v_quarter, 0.f,        0.f), voxel_idx, voxel_size, &dist_x_plus);
+  valid &= trilinearInterpolation(neighbor_blocks, position + Vector3f(0.f,       v_quarter,  0.f), voxel_idx, voxel_size, &dist_y_plus);
+  valid &= trilinearInterpolation(neighbor_blocks, position + Vector3f(0.f,       0.f,  v_quarter), voxel_idx, voxel_size, &dist_z_plus);
+  valid &= trilinearInterpolation(neighbor_blocks, position - Vector3f(v_quarter, 0.f,        0.f), voxel_idx, voxel_size, &dist_x_minus);
+  valid &= trilinearInterpolation(neighbor_blocks, position - Vector3f(0.f,       v_quarter,  0.f), voxel_idx, voxel_size, &dist_y_minus);
+  valid &= trilinearInterpolation(neighbor_blocks, position - Vector3f(0.f,       0.f,  v_quarter), voxel_idx, voxel_size, &dist_z_minus);
   // clang-format on
 
   if (!valid) {
@@ -116,9 +131,9 @@ __device__ bool computeTSDFGradient(const TsdfBlock** neighbor_blocks,
   }
 
   // approximate gradient by finite differences
-  gradient << (dist_x_plus - dist_x_minus) / voxel_size_2x,
-      (dist_y_plus - dist_y_minus) / voxel_size_2x,
-      (dist_z_plus - dist_z_minus) / voxel_size_2x;
+  gradient << (dist_x_plus - dist_x_minus) / voxel_size_half,
+      (dist_y_plus - dist_y_minus) / voxel_size_half,
+      (dist_z_plus - dist_z_minus) / voxel_size_half;
   return true;
 }
 
@@ -166,9 +181,11 @@ __device__ inline float computeDirWeight(const TexVoxel::Dir dir,
  */
 __global__ void setTexVoxelDirsfromTsdfGradient(
     const TsdfBlock** neighbor_blocks, TexBlock** tex_block_ptrs,
-    const float block_size, const float voxel_size) {
+    const Index3D* block_indices, const float block_size,
+    const float voxel_size) {
   // Get the Voxels we'll check in this thread
   TexBlock* tex_block = tex_block_ptrs[blockIdx.x];
+  Index3D block_idx = block_indices[blockIdx.x];
   Index3D voxel_idx = Index3D(threadIdx.z, threadIdx.y, threadIdx.x);
   TexVoxel* tex_voxel =
       &(tex_block->voxels[voxel_idx[0]][voxel_idx[1]][voxel_idx[2]]);
@@ -177,15 +194,15 @@ __global__ void setTexVoxelDirsfromTsdfGradient(
   // thier direction
   // if (tex_voxel->dir_weight >= TexVoxel::DIR_THRESHOLD) return;
 
-  // Vector3f position = getCenterPostionFromBlockIndexAndVoxelIndex(
-  //     block_size, block_index, voxel_idx);
+  Vector3f position = getCenterPostionFromBlockIndexAndVoxelIndex(
+      block_size, block_idx, voxel_idx);
 
   // Since we are working in an TSDF, where the distance of each voxel to the
   // surface implicitly defines the surface boundary, the normal of each voxel
   // is just the normalized gradient.
   Vector3f gradient;
-  const bool valid_gradient =
-      computeTSDFGradient(neighbor_blocks, voxel_idx, voxel_size, gradient);
+  const bool valid_gradient = computeTSDFGradient(
+      neighbor_blocks, voxel_idx, position, voxel_size, gradient);
   const double gradient_norm = gradient.norm();
   if (!valid_gradient || gradient_norm <= 0) return;
 
@@ -328,6 +345,7 @@ __global__ void setTexVoxelDirs(const TexVoxel::Dir* dirs,
 
 void updateTexVoxelDirectionsGPU(
     device_vector<const TsdfBlock*> neighbor_blocks,
+    const device_vector<Index3D> block_indices,
     device_vector<TexBlock*>& tex_block_ptrs, const int num_blocks,
     const cudaStream_t stream, const float block_size, const float voxel_size) {
   // Kernel call - One ThreadBlock launched per VoxelBlock
@@ -347,6 +365,7 @@ void updateTexVoxelDirectionsGPU(
   setTexVoxelDirsfromTsdfGradient<<<num_thread_blocks, kThreadsPerBlock, 0, stream>>>(
       neighbor_blocks.data(),
       tex_block_ptrs.data(),
+      block_indices.data(),
       block_size,
       voxel_size
   );

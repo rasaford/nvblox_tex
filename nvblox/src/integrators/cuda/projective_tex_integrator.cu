@@ -45,7 +45,7 @@ void ProjectiveTexIntegrator::integrateFrame(
   // Metric truncation distance for this layer
   const float voxel_size =
       tex_layer->block_size() / VoxelBlock<bool>::kVoxelsPerSide;
-  const float truncation_distance_m = truncation_distance_vox_ * voxel_size;
+  const float truncation_distance_m = 2.f * voxel_size;
 
   timing::Timer blocks_in_view_timer("tex/integrate/get_blocks_in_view");
   std::vector<Index3D> block_indices =
@@ -509,16 +509,16 @@ void ProjectiveTexIntegrator::updateVoxelNormalDirections(
   // all new blocks
   // NOTE(rasaford) Even though we do not modify TsdfLayer, we have to drop
   // const here due to the way the GPUHashMap works
-  TsdfLayer* tsdf_layer_non_const = const_cast<TsdfLayer*>(&tsdf_layer);
-  std::vector<TsdfBlock*> tsdf_block_ptrs =
-      getBlockPtrsFromIndices(block_indices, tsdf_layer_non_const);
+  // TsdfLayer* tsdf_layer_non_const = const_cast<TsdfLayer*>(&tsdf_layer);
+  // std::vector<TsdfBlock*> tsdf_block_ptrs =
+  //     getBlockPtrsFromIndices(block_indices, tsdf_layer_non_const);
   std::vector<TexBlock*> tex_block_ptrs =
       getBlockPtrsFromIndices(block_indices, tex_layer_ptr);
 
-  // We assume that a TsdfBlock at index i corresponds to a TexBlock at i. This
-  // cannot be the case if the two vectors don't have the same number of
-  // elements
-  CHECK_EQ(tsdf_block_ptrs.size(), tex_block_ptrs.size());
+  // // We assume that a TsdfBlock at index i corresponds to a TexBlock at i. This
+  // // cannot be the case if the two vectors don't have the same number of
+  // // elements
+  // CHECK_EQ(tsdf_block_ptrs.size(), tex_block_ptrs.size());
 
   const int num_blocks = block_indices.size();
   // Expand the buffers when needed
@@ -536,14 +536,8 @@ void ProjectiveTexIntegrator::updateVoxelNormalDirections(
   update_normals_block_indices_host_ = block_indices;
   update_normals_block_indices_device_ = update_normals_block_indices_host_;
 
-  // View of BlockIndices to TsdfBlock potiners. We need this to do global
-  // position lookups for all voxels.
-  const GPULayerView<TsdfBlock> tsdf_layer_view = tsdf_layer.getGpuLayerView();
-  const GPULayerView<TexBlock> tex_layer_view =
-      tex_layer_ptr->getGpuLayerView();
-
   tex::updateTexVoxelDirectionsGPU(
-      tsdf_block_ptrs_device_, update_normals_tex_block_prts_device_,
+      tsdf_block_ptrs_device_, update_normals_block_indices_device_, update_normals_tex_block_prts_device_,
       num_blocks, integration_stream_, tsdf_layer.block_size(),
       tsdf_layer.voxel_size());
 }
