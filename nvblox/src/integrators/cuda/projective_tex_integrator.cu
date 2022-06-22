@@ -79,8 +79,7 @@ void ProjectiveTexIntegrator::integrateFrame(
   // Update normal directions for all voxels which do not have a voxel dir set
   // already
   timing::Timer update_normals_timer("tex/integrate/update_normals");
-  updateVoxelNormalDirections(tsdf_layer, tex_layer,
-                              block_indices,
+  updateVoxelNormalDirections(tsdf_layer, tex_layer, block_indices,
                               truncation_distance_m);
   update_normals_timer.Stop();
 
@@ -120,9 +119,11 @@ void ProjectiveTexIntegrator::updateNeighborIndicies(
   tsdf_block_ptrs_device_ = tsdf_block_ptrs_host_;
 }
 
-__device__ inline float computeMeasurementWeight(const TexVoxel* tex_voxel,
-                                                 const Transform T_C_L,
-                                                 const Vector3f& voxel_center) {
+__device__ float computeMeasurementWeight(const TexVoxel* tex_voxel,
+                                                 const Transform& T_C_L,
+                                                 const Vector3f& voxel_center,
+                                                 const Vector2f& u_px,
+                                                 const float u_px_depth) {
   // TODO: (rasaford) compute measurement weight based on e.g.
   // - size of the projected texel in the image
   // - sharpness of the projected area in the image (to compensate motion blur)
@@ -131,11 +132,62 @@ __device__ inline float computeMeasurementWeight(const TexVoxel* tex_voxel,
   // - ...
 
   // NOTE(rasaford) the resulting world vector is always normlaized
-  Vector3f world_vector = tex::texDirToWorldVector(tex_voxel->dir);
+  // const Vector3f world_vector = tex::texDirToWorldVector(tex_voxel->dir);
+  // const float view_dir_weight = fabs(world_vector.dot(view_dir));  // in [0,
+  // 1]
+
+  // Area based weighting
+  // Minimum depth of scanning (m). I.e. closest we will get to a point.
+  constexpr float MIN_DEPTH = .1f;
+  // Smoothing for the deviation in normal direction we accept for w_area
+  constexpr float SIMGA_AREA = 2.f;
+  // Smoothing for the deviation in normal direction we accept for w_angle
+  constexpr float SIMGA_ANGLE = 1.f;
+  constexpr float MIN_W_AREA = .1f;   // GAMAM_AREA in TextureFusion Paper
+  constexpr float MIN_W_ANGLE = .1f;  // GAMAM_ANGLE in TextureFusion Paper
 
   Vector3f view_dir = (T_C_L.translation() - voxel_center).normalized();
+  float normal_align =
+      tex::texDirToWorldVector(tex_voxel->dir).dot(view_dir);  // in [-1, 1]
+  float depth_clipped = fmax(u_px_depth, MIN_DEPTH);
+  // rho is the product of the alignment of the view direction with the surface
+  // normal at the given voxel and the clipped inverse depth. I.e. voxels that
+  // we look at head on and are close to the camera are preferred
+  float rho =
+      powf(MIN_DEPTH / depth_clipped, 2.f) * normal_align;  // in [-1, 1]
 
-  return fabs(world_vector.dot(view_dir));
+  // w_area is a bell curve centered at 1 with rho as a parameter. So the closer
+  // rho is to one, the more weight we assign it. SIGMA_AREA controlls the
+  // sharpness of the falloff at around the mean 1.
+  // clang-format off
+  float w_area = fmax(
+      expf(-powf((1 - rho) / SIMGA_AREA, 2.f)), 
+      MIN_W_AREA
+  ); // in [MIN_W_AREA, 1]
+  // clang-format on
+
+  // View angle based weighting
+  // clang-format off
+  float w_angle = fmax(
+    expf(-powf((1 - normal_align) / SIMGA_ANGLE, 2.f)),
+    MIN_W_ANGLE
+  ); // in [MIN_W_ANGLE, 1]
+  // clang-format on
+
+  // printf("depth_clipped: %f, rho: %f, normal_align: %f, w_area: %f, w_angle:
+  // %f\n", depth_clipped, rho, normal_align, w_area, w_angle);
+
+  // // wiegh down voxels at depth discontinuities
+  // Vector2f gradient;
+  // float gradient_weight = 0;
+  // if (imageGradient<float>(
+  //         depth_image, depth_rows, depth_cols,
+  //         u_px_center / static_cast<float>(depth_subsampling_factor), 10.f,
+  //         &gradient)) {
+  //   gradient_weight = -10 * gradient.norm();
+  // }
+
+  return w_area * w_angle;  // in [0, 1]
 }
 
 __device__ inline void updateTexel(const Color& color_measured,
@@ -279,8 +331,7 @@ __global__ void integrateBlocks(
 
   // Get - the depth of the voxel center
   //     - Also check if the voxel projects inside the image
-  const Eigen::Vector2f u_px_depth =
-      u_px / static_cast<float>(depth_subsample_factor);
+  const Vector2f u_px_depth = u_px / static_cast<float>(depth_subsample_factor);
   float surface_depth_m;
   if (!interpolation::interpolate2DLinear<float>(
           depth_image, u_px_depth, depth_rows, depth_cols, &surface_depth_m)) {
@@ -315,10 +366,10 @@ __global__ void integrateBlocks(
   const Vector3f voxel_center = getCenterPostionFromBlockIndexAndVoxelIndex(
       block_size, block_idx, voxel_idx);
 
-  // float measurement_weight =
-  //     computeMeasurementWeight(voxel_ptr, T_C_L, voxel_center);
-  float measurement_weight = 1.f;
+  // float measurement_weight = 1.f;
 
+  float measurement_weight = computeMeasurementWeight(
+      voxel_ptr, T_C_L, voxel_center, u_px, surface_depth_m);
   Color image_value = Color::Black();
   Index2D texel_idx{0, 0};
   Vector3f texel_pos = Vector3f::Zero();
@@ -357,8 +408,9 @@ __global__ void integrateBlocks(
                   max_weight);
     }
   }
-  // update the voxel weight
-  voxel_ptr->weight = fmin(measurement_weight + voxel_ptr->weight, max_weight);
+  // Since the voxel_weight is read when updating the texels, it must be updated
+  // after all texels
+  voxel_ptr->weight = (measurement_weight + voxel_ptr->weight) / 2;
 }
 
 void ProjectiveTexIntegrator::updateBlocks(
@@ -515,7 +567,8 @@ void ProjectiveTexIntegrator::updateVoxelNormalDirections(
   std::vector<TexBlock*> tex_block_ptrs =
       getBlockPtrsFromIndices(block_indices, tex_layer_ptr);
 
-  // // We assume that a TsdfBlock at index i corresponds to a TexBlock at i. This
+  // // We assume that a TsdfBlock at index i corresponds to a TexBlock at i.
+  // This
   // // cannot be the case if the two vectors don't have the same number of
   // // elements
   // CHECK_EQ(tsdf_block_ptrs.size(), tex_block_ptrs.size());
@@ -537,9 +590,9 @@ void ProjectiveTexIntegrator::updateVoxelNormalDirections(
   update_normals_block_indices_device_ = update_normals_block_indices_host_;
 
   tex::updateTexVoxelDirectionsGPU(
-      tsdf_block_ptrs_device_, update_normals_block_indices_device_, update_normals_tex_block_prts_device_,
-      num_blocks, integration_stream_, tsdf_layer.block_size(),
-      tsdf_layer.voxel_size());
+      tsdf_block_ptrs_device_, update_normals_block_indices_device_,
+      update_normals_tex_block_prts_device_, num_blocks, integration_stream_,
+      tsdf_layer.block_size(), tsdf_layer.voxel_size());
 }
 
 }  // namespace nvblox
