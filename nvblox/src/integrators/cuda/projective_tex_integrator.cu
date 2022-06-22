@@ -36,7 +36,7 @@ void ProjectiveTexIntegrator::finish() const {
 }
 
 void ProjectiveTexIntegrator::integrateFrame(
-    const ColorImage& color_frame, const Transform& T_L_C, const Camera& camera,
+    const ColorImage& color_frame, const DepthImage& depth_frame, const Transform& T_L_C, const Camera& camera,
     const TsdfLayer& tsdf_layer, TexLayer* tex_layer,
     std::vector<Index3D>* updated_blocks) {
   CHECK_NOTNULL(tex_layer);
@@ -45,11 +45,11 @@ void ProjectiveTexIntegrator::integrateFrame(
   // Metric truncation distance for this layer
   const float voxel_size =
       tex_layer->block_size() / VoxelBlock<bool>::kVoxelsPerSide;
-  const float truncation_distance_m = 2.f * voxel_size;
+  const float truncation_distance_m = 1.f * voxel_size;
 
   timing::Timer blocks_in_view_timer("tex/integrate/get_blocks_in_view");
   std::vector<Index3D> block_indices =
-      getBlocksInView(T_L_C, camera, tex_layer->block_size());
+      getBlocksInViewUsingRaycasting(depth_frame, T_L_C, camera, tex_layer->block_size());
   blocks_in_view_timer.Stop();
 
   // Check which of these blocks are:
@@ -120,10 +120,11 @@ void ProjectiveTexIntegrator::updateNeighborIndicies(
 }
 
 __device__ float computeMeasurementWeight(const TexVoxel* tex_voxel,
-                                                 const Transform& T_C_L,
-                                                 const Vector3f& voxel_center,
-                                                 const Vector2f& u_px,
-                                                 const float u_px_depth) {
+                                          const Transform& T_C_L,
+                                          const Vector3f& voxel_center,
+                                          const Vector2f& u_px,
+                                          const float voxel_size,
+                                          const float surface_depth) {
   // TODO: (rasaford) compute measurement weight based on e.g.
   // - size of the projected texel in the image
   // - sharpness of the projected area in the image (to compensate motion blur)
@@ -141,15 +142,22 @@ __device__ float computeMeasurementWeight(const TexVoxel* tex_voxel,
   constexpr float MIN_DEPTH = .1f;
   // Smoothing for the deviation in normal direction we accept for w_area
   constexpr float SIMGA_AREA = 2.f;
+  // // Smoothing for the deviation in normal direction we accept for w_angle
+  // constexpr float SIGMA_PROJ = 5.f;
   // Smoothing for the deviation in normal direction we accept for w_angle
   constexpr float SIMGA_ANGLE = 1.f;
   constexpr float MIN_W_AREA = .1f;   // GAMAM_AREA in TextureFusion Paper
   constexpr float MIN_W_ANGLE = .1f;  // GAMAM_ANGLE in TextureFusion Paper
 
-  Vector3f view_dir = (T_C_L.translation() - voxel_center).normalized();
-  float normal_align =
-      tex::texDirToWorldVector(tex_voxel->dir).dot(view_dir);  // in [-1, 1]
-  float depth_clipped = fmax(u_px_depth, MIN_DEPTH);
+  Vector3f view_dir = T_C_L.translation() - voxel_center;
+  float voxel_distance = view_dir.norm();
+
+  // float w_proj = expf(
+  //     -powf(((voxel_distance - surface_depth) / voxel_size) / SIGMA_PROJ, 2.f));
+
+  float normal_align = tex::texDirToWorldVector(tex_voxel->dir)
+                           .dot(view_dir / voxel_distance);  // in [-1, 1]
+  float depth_clipped = fmax(surface_depth, MIN_DEPTH);
   // rho is the product of the alignment of the view direction with the surface
   // normal at the given voxel and the clipped inverse depth. I.e. voxels that
   // we look at head on and are close to the camera are preferred
@@ -367,9 +375,10 @@ __global__ void integrateBlocks(
       block_size, block_idx, voxel_idx);
 
   // float measurement_weight = 1.f;
+  const float voxel_size = block_size / TsdfBlock::kVoxelsPerSide;
 
   float measurement_weight = computeMeasurementWeight(
-      voxel_ptr, T_C_L, voxel_center, u_px, surface_depth_m);
+      voxel_ptr, T_C_L, voxel_center, u_px, voxel_size, surface_depth_m);
   Color image_value = Color::Black();
   Index2D texel_idx{0, 0};
   Vector3f texel_pos = Vector3f::Zero();
@@ -384,8 +393,8 @@ __global__ void integrateBlocks(
                                             texel_idx, voxel_ptr->dir);
 
       float distance;
-      if (!raycastToSurface(tsdf_blocks, block_size / TsdfBlock::kVoxelsPerSide,
-                            texel_pos, voxel_ptr->dir, &distance)) {
+      if (!raycastToSurface(tsdf_blocks, voxel_size, texel_pos, voxel_ptr->dir,
+                            &distance)) {
         continue;
       }
       // printf("%f\n", distance);

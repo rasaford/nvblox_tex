@@ -446,7 +446,7 @@ bool TexFuse3DMatch::integrateFrame(const int frame_number) {
 
   if ((frame_number + 1) % color_frame_subsampling_ == 0) {
     timing::Timer timer_integrate_color("3dmatch/integrate_color");
-    mapper_.integrateColor(color_frame, T_L_C, camera);
+    mapper_.integrateColor(color_frame, depth_frame, T_L_C, camera);
     timer_integrate_color.Stop();
   }
 

@@ -256,8 +256,8 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
 
     // Generate an image with a single color
     std::vector<Index3D> updated_blocks;
-    tex_integrator.integrateFrame(image, T_S_C, camera_, gt_layer_, &tex_layer,
-                                  &updated_blocks);
+    // tex_integrator.integrateFrame(image, T_S_C, camera_, gt_layer_, &tex_layer,
+    //                               &updated_blocks);
     // Accumulate touched block indices
     std::copy(updated_blocks.begin(), updated_blocks.end(),
               std::inserter(touched_blocks, touched_blocks.end()));

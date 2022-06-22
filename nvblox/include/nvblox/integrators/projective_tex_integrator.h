@@ -34,7 +34,7 @@ class ProjectiveTexIntegrator : public ProjectiveIntegratorBase {
   void finish() const override;
 
   // Main interface - integrate a ColorImage
-  void integrateFrame(const ColorImage& color_frame, const Transform& T_L_C,
+  void integrateFrame(const ColorImage& color_frame, const DepthImage& depth_frame, const Transform& T_L_C,
                       const Camera& camera, const TsdfLayer& tsdf_layer,
                       TexLayer* color_layer,
                       std::vector<Index3D>* updated_blocks = nullptr);
