@@ -45,7 +45,7 @@ void ProjectiveTexIntegrator::integrateFrame(
   // Metric truncation distance for this layer
   const float voxel_size =
       tex_layer->block_size() / VoxelBlock<bool>::kVoxelsPerSide;
-  const float truncation_distance_m = 1.f * voxel_size;
+  const float truncation_distance_m = 2.f * voxel_size;
 
   timing::Timer blocks_in_view_timer("tex/integrate/get_blocks_in_view");
   std::vector<Index3D> block_indices =
