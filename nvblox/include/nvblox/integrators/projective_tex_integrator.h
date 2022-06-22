@@ -51,6 +51,9 @@ class ProjectiveTexIntegrator : public ProjectiveIntegratorBase {
       const std::vector<Index3D>& block_indices, const TsdfLayer& tsdf_layer,
       const float truncation_distance_m);
 
+  void updateNeighborIndicies(const TsdfLayer& tsdf_layer,
+                              const std::vector<Index3D>& block_indices);
+
   void updateVoxelNormalDirections(const TsdfLayer& tsdf_layer,
                                    TexLayer* tex_layer_ptr,
                                    const std::vector<Index3D>& block_indices,
@@ -74,7 +77,6 @@ class ProjectiveTexIntegrator : public ProjectiveIntegratorBase {
   host_vector<Index3D> block_indices_host_;
   host_vector<TexBlock*> tex_block_ptrs_host_;
   host_vector<const TsdfBlock*> tsdf_block_ptrs_host_;
-  
 
   // Buffers for getting blocks in truncation band
   device_vector<const TsdfBlock*> truncation_band_block_ptrs_device_;

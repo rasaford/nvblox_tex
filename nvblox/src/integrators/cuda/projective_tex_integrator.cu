@@ -71,10 +71,16 @@ void ProjectiveTexIntegrator::integrateFrame(
   allocateBlocksWhereRequired(block_indices, tex_layer);
   allocate_blocks_timer.Stop();
 
+  timing::Timer update_neighbor_block_indices_timer(
+      "tex/integrate/neighbor_block_indices");
+  updateNeighborIndicies(tsdf_layer, block_indices);
+  update_neighbor_block_indices_timer.Stop();
+
   // Update normal directions for all voxels which do not have a voxel dir set
   // already
   timing::Timer update_normals_timer("tex/integrate/update_normals");
-  updateVoxelNormalDirections(tsdf_layer, tex_layer, block_indices,
+  updateVoxelNormalDirections(tsdf_layer, tex_layer,
+                              block_indices,
                               truncation_distance_m);
   update_normals_timer.Stop();
 
@@ -96,6 +102,22 @@ void ProjectiveTexIntegrator::integrateFrame(
   if (updated_blocks != nullptr) {
     *updated_blocks = block_indices;
   }
+}
+
+void ProjectiveTexIntegrator::updateNeighborIndicies(
+    const TsdfLayer& tsdf_layer, const std::vector<Index3D>& block_indices) {
+  const int new_size = block_indices.size() * tex::neighbor::kCubeNeighbors;
+  tsdf_block_ptrs_host_.resize(new_size);
+  tsdf_block_ptrs_device_.resize(new_size);
+
+  for (int i = 0; i < block_indices.size(); ++i) {
+    for (int j = 0; j < tex::neighbor::kCubeNeighbors; ++j) {
+      Index3D offset = tex::neighbor::blockOffsetFromNeighborIndex(j);
+      tsdf_block_ptrs_host_[i * tex::neighbor::kCubeNeighbors + j] =
+          tsdf_layer.getBlockAtIndex(block_indices[i] + offset).get();
+    }
+  }
+  tsdf_block_ptrs_device_ = tsdf_block_ptrs_host_;
 }
 
 __device__ inline float computeMeasurementWeight(const TexVoxel* tex_voxel,
@@ -134,12 +156,13 @@ __device__ const TsdfVoxel* getNeighborVoxelAtIndex(
   // it.
   Index3D voxel_idx = voxel_index;
   Index3D block_offset{0, 0, 0};
+  constexpr int voxels_per_side = static_cast<int>(TsdfBlock::kVoxelsPerSide);
   for (int i = 0; i < 3; ++i) {
-    if (voxel_idx[i] >= TsdfBlock::kVoxelsPerSide) {
-      voxel_idx[i] -= TsdfBlock::kVoxelsPerSide;
+    if (voxel_idx[i] >= voxels_per_side) {
+      voxel_idx[i] -= voxels_per_side;
       block_offset[i] = 1;
     } else if (voxel_idx[i] < 0) {
-      voxel_idx[i] += TsdfBlock::kVoxelsPerSide;
+      voxel_idx[i] += voxels_per_side;
       block_offset[i] = -1;
     }
   }
@@ -354,19 +377,6 @@ void ProjectiveTexIntegrator::updateBlocks(
   const int depth_subsampling_factor = color_frame.rows() / depth_frame.rows();
   CHECK_EQ(color_frame.cols() / depth_frame.cols(), depth_subsampling_factor);
 
-  tsdf_block_ptrs_host_.resize(block_indices.size() *
-                               tex::neighbor::kCubeNeighbors);
-  tsdf_block_ptrs_device_.resize(block_indices.size() *
-                                 tex::neighbor::kCubeNeighbors);
-  for (int i = 0; i < block_indices.size(); ++i) {
-    for (int j = 0; j < tex::neighbor::kCubeNeighbors; ++j) {
-      Index3D offset = tex::neighbor::blockOffsetFromNeighborIndex(j);
-      tsdf_block_ptrs_host_[i * tex::neighbor::kCubeNeighbors + j] =
-          tsdf_layer.getBlockAtIndex(block_indices[i] + offset).get();
-    }
-  }
-  tsdf_block_ptrs_device_ = tsdf_block_ptrs_host_;
-
   // Expand the buffers when needed
   if (num_blocks > block_indices_device_.size()) {
     const int new_size = static_cast<int>(kBufferExpansionFactor * num_blocks);
@@ -533,9 +543,9 @@ void ProjectiveTexIntegrator::updateVoxelNormalDirections(
       tex_layer_ptr->getGpuLayerView();
 
   tex::updateTexVoxelDirectionsGPU(
-      tsdf_layer_view, tex_layer_view, update_normals_tex_block_prts_device_,
-      update_normals_block_indices_device_, num_blocks, integration_stream_,
-      tsdf_layer.block_size(), tsdf_layer.voxel_size());
+      tsdf_block_ptrs_device_, update_normals_tex_block_prts_device_,
+      num_blocks, integration_stream_, tsdf_layer.block_size(),
+      tsdf_layer.voxel_size());
 }
 
 }  // namespace nvblox

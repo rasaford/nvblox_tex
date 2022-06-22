@@ -12,29 +12,68 @@
 namespace nvblox {
 namespace tex {
 
-/**
- * @brief Get the Tsdf value distance value at the current position
- *
- * @param gpu_hash_index_to_str
- * @param position
- * @param block_size
- * @param distance output distance. Only written to if the return value ==
- * true
- * @return if the given position corresponds to a valid voxel with weight > 0
- */
-__device__ inline bool getTsdfDistance(
-    const Index3DDeviceHashMapType<TsdfBlock>& gpu_hash_index_to_ptr,
-    const Vector3f& position, const float block_size, float& distance) {
-  TsdfVoxel* voxel;
-  if (getVoxelAtPosition<TsdfVoxel>(gpu_hash_index_to_ptr, position, block_size,
-                                    &voxel) &&
-      voxel != nullptr) {
-    if (voxel->weight > 0.0f) {
-      distance = voxel->distance;
-      return true;
+__device__ const TsdfVoxel* getVoxel(const TsdfBlock** blocks,
+                                     const Index3D& voxel_index) {
+  const int block_idx = blockIdx.x;
+
+  // create a local copy of the voxel index, since we are going to be modifying
+  // it.
+  Index3D voxel_idx = voxel_index;
+  Index3D block_offset{0, 0, 0};
+  constexpr int voxels_per_side = static_cast<int>(TsdfBlock::kVoxelsPerSide);
+  for (int i = 0; i < 3; ++i) {
+    if (voxel_idx[i] >= voxels_per_side) {
+      voxel_idx[i] -= voxels_per_side;
+      block_offset[i] = 1;
+    } else if (voxel_idx[i] < 0) {
+      voxel_idx[i] += voxels_per_side;
+      block_offset[i] = -1;
     }
   }
-  return false;
+
+  // We cannot look more than one block in any direction
+  if ((block_offset.array() > 1).any() || (block_offset.array() < -1).any() ||
+      (voxel_idx.array() < 0).any() ||
+      (voxel_idx.array() >= TsdfBlock::kVoxelsPerSide).any()) {
+    printf(
+        "voxel_index (%d, %d, %d), voxel_idx (%d, %d, %d), block_offset(%d, "
+        "%d, %d)\n",
+        voxel_index[0], voxel_index[1], voxel_index[2], voxel_idx[0],
+        voxel_idx[1], voxel_idx[2], block_offset[0], block_offset[1],
+        block_offset[2]);
+    return nullptr;
+  }
+  // get the neighboring voxel either from a neighboring block if it's outside
+  // the current one, or get it directly from the current block
+  int linear_neighbor_idx =
+      neighbor::neighborBlockIndexFromOffset(block_offset);
+  const TsdfBlock* block =
+      blocks[block_idx * neighbor::kCubeNeighbors + linear_neighbor_idx];
+
+  if (block == nullptr) {
+    return nullptr;
+  }
+  return &block->voxels[voxel_idx.x()][voxel_idx.y()][voxel_idx.z()];
+}
+
+__device__ bool trilinearInterpolation(const TsdfBlock** blocks,
+                                       const Index3D voxel_idx, float* dist) {
+  const Vector3f weight{0.5f, 0.5f, 0.5f};
+
+  (*dist) = 0.f;
+  const TsdfVoxel* v;
+  // clang-format off
+  v = getVoxel(blocks, voxel_idx + Index3D(0, 0, 0));   if (v == nullptr || v->weight == 0.f) return false;   (*dist) += (1.f - weight.x()) * (1.f - weight.y()) * (1.f - weight.z()) * v->distance;
+  v = getVoxel(blocks, voxel_idx + Index3D(1, 0, 0));   if (v == nullptr || v->weight == 0.f) return false;   (*dist) += weight.x()         * (1.f - weight.y()) * (1.f - weight.z()) * v->distance;
+  v = getVoxel(blocks, voxel_idx + Index3D(0, 1, 0));   if (v == nullptr || v->weight == 0.f) return false;   (*dist) += (1.f - weight.x()) * weight.y()         * (1.f - weight.z()) * v->distance;
+  v = getVoxel(blocks, voxel_idx + Index3D(0, 0, 1));   if (v == nullptr || v->weight == 0.f) return false;   (*dist) += (1.f - weight.x()) * (1.f - weight.y()) *  weight.z()        * v->distance;
+  v = getVoxel(blocks, voxel_idx + Index3D(1, 1, 0));   if (v == nullptr || v->weight == 0.f) return false;   (*dist) += weight.x()         * weight.y()         * (1.f - weight.z()) * v->distance;
+  v = getVoxel(blocks, voxel_idx + Index3D(0, 1, 1));   if (v == nullptr || v->weight == 0.f) return false;   (*dist) += (1.f - weight.x()) * weight.y()         *  weight.z()        * v->distance;
+  v = getVoxel(blocks, voxel_idx + Index3D(1, 0, 1));   if (v == nullptr || v->weight == 0.f) return false;   (*dist) += weight.x()         * (1.f - weight.y()) *  weight.z()        * v->distance;
+  v = getVoxel(blocks, voxel_idx + Index3D(1, 1, 1));   if (v == nullptr || v->weight == 0.f) return false;   (*dist) += weight.x()         *  weight.y()        *  weight.z()        * v->distance;
+  // clang-format on
+
+  return true;
 }
 
 /**
@@ -49,10 +88,10 @@ __device__ inline bool getTsdfDistance(
  * @return if the computed gradient is valid (i.e. the voxel at this position
  * has at least 6 neighbors)
  */
-__device__ bool computeTSDFGradient(
-    const Index3DDeviceHashMapType<TsdfBlock>& gpu_hash_index_to_ptr,
-    const Vector3f& position, const float block_size, const float voxel_size,
-    Vector3f& gradient) {
+__device__ bool computeTSDFGradient(const TsdfBlock** neighbor_blocks,
+                                    const Index3D& voxel_idx,
+                                    const float voxel_size,
+                                    Vector3f& gradient) {
   // voxel size is block size divided by number of blocks per side
   // const float voxel_size =
   //     block_size / static_cast<float>(tsdf_block->kVoxelsPerSide);
@@ -61,14 +100,15 @@ __device__ bool computeTSDFGradient(
         dist_z_plus = 0, dist_z_minus = 0;
   bool valid = true;
 
+  const TsdfVoxel* v;
   // get tsdf values for each neighboring voxel to the current one
   // clang-format off
-  valid &= getTsdfDistance(gpu_hash_index_to_ptr, position + Vector3f(voxel_size, 0.0f, 0.0f), block_size, dist_x_plus); 
-  valid &= getTsdfDistance(gpu_hash_index_to_ptr, position + Vector3f(0.0f, voxel_size, 0.0f), block_size, dist_y_plus); 
-  valid &= getTsdfDistance(gpu_hash_index_to_ptr, position + Vector3f(0.0f, 0.0f, voxel_size), block_size, dist_z_plus); 
-  valid &= getTsdfDistance(gpu_hash_index_to_ptr, position - Vector3f(voxel_size, 0.0f, 0.0f), block_size, dist_x_minus); 
-  valid &= getTsdfDistance(gpu_hash_index_to_ptr, position - Vector3f(0.0f, voxel_size, 0.0f), block_size, dist_y_minus); 
-  valid &= getTsdfDistance(gpu_hash_index_to_ptr, position - Vector3f(0.0f, 0.0f, voxel_size), block_size, dist_z_minus);
+  valid &= trilinearInterpolation(neighbor_blocks, voxel_idx + Index3D(1, 0, 0), &dist_x_plus);
+  valid &= trilinearInterpolation(neighbor_blocks, voxel_idx + Index3D(0, 1, 0), &dist_y_plus);
+  valid &= trilinearInterpolation(neighbor_blocks, voxel_idx + Index3D(0, 0, 1), &dist_z_plus);
+  valid &= trilinearInterpolation(neighbor_blocks, voxel_idx - Index3D(1, 0, 0), &dist_x_minus);
+  valid &= trilinearInterpolation(neighbor_blocks, voxel_idx - Index3D(0, 1, 0), &dist_y_minus);
+  valid &= trilinearInterpolation(neighbor_blocks, voxel_idx - Index3D(0, 0, 1), &dist_z_minus);
   // clang-format on
 
   if (!valid) {
@@ -125,29 +165,27 @@ __device__ inline float computeDirWeight(const TexVoxel::Dir dir,
  * @param block_size
  */
 __global__ void setTexVoxelDirsfromTsdfGradient(
-    const Index3DDeviceHashMapType<TsdfBlock> gpu_hash_index_to_ptr,
-    TexBlock** tex_block_ptrs, const Index3D* block_indices,
+    const TsdfBlock** neighbor_blocks, TexBlock** tex_block_ptrs,
     const float block_size, const float voxel_size) {
   // Get the Voxels we'll check in this thread
   TexBlock* tex_block = tex_block_ptrs[blockIdx.x];
-  const Index3D& block_index = block_indices[blockIdx.x];
-  Index3D voxel_index = Index3D(threadIdx.z, threadIdx.y, threadIdx.x);
+  Index3D voxel_idx = Index3D(threadIdx.z, threadIdx.y, threadIdx.x);
   TexVoxel* tex_voxel =
-      &(tex_block->voxels[voxel_index[0]][voxel_index[1]][voxel_index[2]]);
+      &(tex_block->voxels[voxel_idx[0]][voxel_idx[1]][voxel_idx[2]]);
 
   // only update the direction for voxels where we are not yet very confident in
   // thier direction
   // if (tex_voxel->dir_weight >= TexVoxel::DIR_THRESHOLD) return;
 
-  Vector3f position = getCenterPostionFromBlockIndexAndVoxelIndex(
-      block_size, block_index, voxel_index);
+  // Vector3f position = getCenterPostionFromBlockIndexAndVoxelIndex(
+  //     block_size, block_index, voxel_idx);
 
   // Since we are working in an TSDF, where the distance of each voxel to the
   // surface implicitly defines the surface boundary, the normal of each voxel
   // is just the normalized gradient.
   Vector3f gradient;
-  const bool valid_gradient = computeTSDFGradient(
-      gpu_hash_index_to_ptr, position, block_size, voxel_size, gradient);
+  const bool valid_gradient =
+      computeTSDFGradient(neighbor_blocks, voxel_idx, voxel_size, gradient);
   const double gradient_norm = gradient.norm();
   if (!valid_gradient || gradient_norm <= 0) return;
 
@@ -289,10 +327,8 @@ __global__ void setTexVoxelDirs(const TexVoxel::Dir* dirs,
 }
 
 void updateTexVoxelDirectionsGPU(
-    const GPULayerView<TsdfBlock>& tsdf_layer_view,
-    const GPULayerView<TexBlock>& tex_layer_view,
-    device_vector<TexBlock*>& tex_block_ptrs,
-    const device_vector<Index3D>& block_indices_device, const int num_blocks,
+    device_vector<const TsdfBlock*> neighbor_blocks,
+    device_vector<TexBlock*>& tex_block_ptrs, const int num_blocks,
     const cudaStream_t stream, const float block_size, const float voxel_size) {
   // Kernel call - One ThreadBlock launched per VoxelBlock
   constexpr int kVoxelsPerSide = VoxelBlock<bool>::kVoxelsPerSide;
@@ -309,9 +345,8 @@ void updateTexVoxelDirectionsGPU(
 
   // clang-format off
   setTexVoxelDirsfromTsdfGradient<<<num_thread_blocks, kThreadsPerBlock, 0, stream>>>(
-      tsdf_layer_view.getHash().impl_,
+      neighbor_blocks.data(),
       tex_block_ptrs.data(),
-      block_indices_device.data(),
       block_size,
       voxel_size
   );
@@ -319,37 +354,38 @@ void updateTexVoxelDirectionsGPU(
   checkCudaErrors(cudaStreamSynchronize(stream));
   checkCudaErrors(cudaPeekAtLastError());
 
-  constexpr int voxels_per_block = TexBlock::kVoxelsPerSide *
-                                   TexBlock::kVoxelsPerSide *
-                                   TexBlock::kVoxelsPerSide;
-  device_vector<TexVoxel::Dir> smooth_dirs;
-  smooth_dirs.reserve(block_indices_device.size() * voxels_per_block);
-  device_vector<float> smooth_weights;
-  smooth_weights.reserve(block_indices_device.size() * voxels_per_block);
+  // constexpr int voxels_per_block = TexBlock::kVoxelsPerSide *
+  //                                  TexBlock::kVoxelsPerSide *
+  //                                  TexBlock::kVoxelsPerSide;
+  // device_vector<TexVoxel::Dir> smooth_dirs;
+  // smooth_dirs.reserve(block_indices_device.size() * voxels_per_block);
+  // device_vector<float> smooth_weights;
+  // smooth_weights.reserve(block_indices_device.size() * voxels_per_block);
 
-  // clang-format off
-  majorityVoteTexVoxelDirs<<<num_thread_blocks, kThreadsPerBlock, 0, stream>>>(
-      tex_layer_view.getHash().impl_,
-      tex_block_ptrs.data(),
-      block_indices_device.data(),
-      block_size,
-      voxel_size,
-      smooth_dirs.data(),
-      smooth_weights.data()
-  );
-  // clang-format on
-  checkCudaErrors(cudaStreamSynchronize(stream));
-  checkCudaErrors(cudaPeekAtLastError());
+  // // clang-format off
+  // majorityVoteTexVoxelDirs<<<num_thread_blocks, kThreadsPerBlock, 0,
+  // stream>>>(
+  //     tex_layer_view.getHash().impl_,
+  //     tex_block_ptrs.data(),
+  //     block_indices_device.data(),
+  //     block_size,
+  //     voxel_size,
+  //     smooth_dirs.data(),
+  //     smooth_weights.data()
+  // );
+  // // clang-format on
+  // checkCudaErrors(cudaStreamSynchronize(stream));
+  // checkCudaErrors(cudaPeekAtLastError());
 
-  // clang-format off
-  setTexVoxelDirs<<<num_thread_blocks, kThreadsPerBlock, 0, stream>>>(
-    smooth_dirs.data(), 
-    smooth_weights.data(),
-    tex_block_ptrs.data()
-  );
-  // clang-format on
-  checkCudaErrors(cudaStreamSynchronize(stream));
-  checkCudaErrors(cudaPeekAtLastError());
+  // // clang-format off
+  // setTexVoxelDirs<<<num_thread_blocks, kThreadsPerBlock, 0, stream>>>(
+  //   smooth_dirs.data(),
+  //   smooth_weights.data(),
+  //   tex_block_ptrs.data()
+  // );
+  // // clang-format on
+  // checkCudaErrors(cudaStreamSynchronize(stream));
+  // checkCudaErrors(cudaPeekAtLastError());
 }
 
 }  // namespace tex
