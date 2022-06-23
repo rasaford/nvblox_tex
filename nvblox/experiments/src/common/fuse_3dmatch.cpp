@@ -317,6 +317,7 @@ Fuse3DMatch Fuse3DMatch::createFromCommandLineArgs(
   if (options.esdf_frame_subsampling > 0) {
     fuser.setEsdfFrameSubsampling(options.esdf_frame_subsampling);
   }
+  fuser.initializeImageLoaders();
 
   return fuser;
 }
@@ -538,7 +539,7 @@ TexFuse3DMatch TexFuse3DMatch::createFromCommandLineArgs(
   if (options.esdf_frame_subsampling > 0) {
     fuser.setEsdfFrameSubsampling(options.esdf_frame_subsampling);
   }
-
+  fuser.initializeImageLoaders();
   return fuser;
 }
 

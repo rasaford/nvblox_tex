@@ -114,7 +114,7 @@ def run_experiment(run_id: str, binary_path: str, dataset_path: str, out_dir: st
         # env={**os.environ, **config["env"]})
     except subprocess.CalledProcessError as e:
         # ignore errors as they are already in stdout / -err.txt
-        pass
+        print(e)
     print("Done writing result files")
     monitor.stop()
 
@@ -133,23 +133,27 @@ def experiment_1(dataset_root: str):
     NVT_Q1_01_BIN = build_experiment("NVT_Q1_01", target="tex_integration",
                                      texel_size=8)
     run_experiment("NVT_Q1_01", NVT_Q1_01_BIN, CORRIDOR_HANDHELD_L515,
-                   OUT_DIR, voxel_size=0.05, texel_size=8)
+                   OUT_DIR, voxel_size=0.04, texel_size=8)
 
     NV_Q1_01_BIN = build_experiment("NV_Q1_01", target="fuse_3dmatch")
 
     run_experiment("NV_Q1_01", NV_Q1_01_BIN,
-                   CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.05, texel_size=1)
+                   CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.04, texel_size=1)
     run_experiment("NV_Q1_02", NV_Q1_01_BIN,
                    CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.02, texel_size=1)
     run_experiment("NV_Q1_03", NV_Q1_01_BIN,
                    CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.01, texel_size=1)
     run_experiment("NV_Q1_04", NV_Q1_01_BIN,
-                   CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.005, texel_size=1)
+                   CORRIDOR_HANDHELD_L515, OUT_DIR, voxel_size=0.009, texel_size=1)
 
 
 def experiment_2(dataset_root: str):
-    texel_sizes = [1, 4, 8, 16]
-    voxel_sizes = [0.1, 0.05, 0.02, 0.01]
+    texel_sizes = [2, 4, 8, 16]
+    voxel_sizes = [0.16, 0.08, 0.04, 0.02, 0.01]
+    ignore = {
+        (0.01, 8),
+        (0.01, 16)
+    }
 
     DATASET = os.path.join(dataset_root, "corridor_handheld_L515")
     OUT_DIR = os.path.join(BASE_EXPERIMENT_DIR, "Q2")
@@ -160,18 +164,27 @@ def experiment_2(dataset_root: str):
 
         for voxel_size in voxel_sizes:
             run_id = f"NVT_Q2_{texel_size}x{texel_size}_{voxel_size}"
+
+            if any(i[0] == voxel_size and i[1] == texel_size for i in ignore):
+                print(f"Skipping run {run_id}, since it's on the ignore list")
+                continue
+
             run_experiment(run_id, bin_file, DATASET,
                            OUT_DIR, voxel_size=voxel_size, texel_size=texel_size)
 
 
 def experiment_3(dataset_root: str):
-    run_id = "NVT_Q3_01"
     DATASET = os.path.join(dataset_root, "corridor_ANYmal_L515")
     OUT_DIR = os.path.join(BASE_EXPERIMENT_DIR, "Q3")
 
     NVT_Q3_01_BIN = build_experiment(
-        run_id, target="tex_integration", texel_size=4)
-    run_experiment(run_id, NVT_Q3_01_BIN, DATASET, OUT_DIR, voxel_size=0.02)
+        "NVT_Q3_01", target="tex_integration", texel_size=4)
+    run_experiment("NVT_Q3_01", NVT_Q3_01_BIN, DATASET, OUT_DIR,
+                   voxel_size=0.04, start_frame=1300, num_frames=2570, texel_size=4)
+    run_experiment("NVT_Q3_02", NVT_Q3_01_BIN, DATASET, OUT_DIR,
+                   voxel_size=0.02, start_frame=1300, num_frames=2570, texel_size=4)
+    run_experiment("NVT_Q3_03", NVT_Q3_01_BIN, DATASET, OUT_DIR,
+                   voxel_size=0.01, start_frame=1300, num_frames=2570, texel_size=4)
 
 
 def experiment_4(dataset_root: str):
