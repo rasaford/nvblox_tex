@@ -134,6 +134,11 @@ def experiment_1(dataset_root: str):
                                      texel_size=8)
     run_experiment("NVT_Q1_01", NVT_Q1_01_BIN, CORRIDOR_HANDHELD_L515,
                    OUT_DIR, voxel_size=0.04, texel_size=8)
+    
+    NVT_Q1_01_BIN = build_experiment("NVT_Q1_02", target="tex_integration",
+                                     texel_size=16)
+    run_experiment("NVT_Q1_02", NVT_Q1_01_BIN, CORRIDOR_HANDHELD_L515,
+                   OUT_DIR, voxel_size=0.04, texel_size=8)
 
     NV_Q1_01_BIN = build_experiment("NV_Q1_01", target="fuse_3dmatch")
 
