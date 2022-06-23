@@ -45,7 +45,7 @@ void ProjectiveTexIntegrator::integrateFrame(
   // Metric truncation distance for this layer
   const float voxel_size =
       tex_layer->block_size() / VoxelBlock<bool>::kVoxelsPerSide;
-  const float truncation_distance_m = 2.f * voxel_size;
+  const float truncation_distance_m = truncation_distance_vox_ * voxel_size;
 
   timing::Timer blocks_in_view_timer("tex/integrate/get_blocks_in_view");
   std::vector<Index3D> block_indices =
@@ -120,10 +120,10 @@ void ProjectiveTexIntegrator::updateNeighborIndicies(
 }
 
 __device__ float computeMeasurementWeight(const TexVoxel* tex_voxel,
-                                                 const Transform& T_C_L,
-                                                 const Vector3f& voxel_center,
-                                                 const Vector2f& u_px,
-                                                 const float u_px_depth) {
+                                          const Transform& T_C_L,
+                                          const Vector3f& voxel_center,
+                                          const Vector2f& u_px,
+                                          const float u_px_depth) {
   // TODO: (rasaford) compute measurement weight based on e.g.
   // - size of the projected texel in the image
   // - sharpness of the projected area in the image (to compensate motion blur)

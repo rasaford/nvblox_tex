@@ -34,13 +34,7 @@ __device__ const TsdfVoxel* getVoxel(const TsdfBlock** blocks,
   // We cannot look more than one block in any direction
   if ((block_offset.array() > 1).any() || (block_offset.array() < -1).any() ||
       (voxel_idx.array() < 0).any() ||
-      (voxel_idx.array() >= TsdfBlock::kVoxelsPerSide).any()) {
-    printf(
-        "voxel_index (%d, %d, %d), voxel_idx (%d, %d, %d), block_offset(%d, "
-        "%d, %d)\n",
-        voxel_index[0], voxel_index[1], voxel_index[2], voxel_idx[0],
-        voxel_idx[1], voxel_idx[2], block_offset[0], block_offset[1],
-        block_offset[2]);
+     (voxel_idx.array() >= TsdfBlock::kVoxelsPerSide).any()) {
     return nullptr;
   }
   // get the neighboring voxel either from a neighboring block if it's outside
