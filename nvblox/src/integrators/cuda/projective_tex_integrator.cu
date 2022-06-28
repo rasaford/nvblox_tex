@@ -124,18 +124,6 @@ __device__ float computeMeasurementWeight(const TexVoxel* tex_voxel,
                                           const Vector3f& voxel_center,
                                           const Vector2f& u_px,
                                           const float u_px_depth) {
-  // TODO: (rasaford) compute measurement weight based on e.g.
-  // - size of the projected texel in the image
-  // - sharpness of the projected area in the image (to compensate motion blur)
-  // - how flat on we're looking at the texel projection
-  // - if the texel is on a boundary
-  // - ...
-
-  // NOTE(rasaford) the resulting world vector is always normlaized
-  // const Vector3f world_vector = tex::texDirToWorldVector(tex_voxel->dir);
-  // const float view_dir_weight = fabs(world_vector.dot(view_dir));  // in [0,
-  // 1]
-
   // Area based weighting
   // Minimum depth of scanning (m). I.e. closest we will get to a point.
   constexpr float MIN_DEPTH = .1f;
@@ -173,19 +161,6 @@ __device__ float computeMeasurementWeight(const TexVoxel* tex_voxel,
     MIN_W_ANGLE
   ); // in [MIN_W_ANGLE, 1]
   // clang-format on
-
-  // printf("depth_clipped: %f, rho: %f, normal_align: %f, w_area: %f, w_angle:
-  // %f\n", depth_clipped, rho, normal_align, w_area, w_angle);
-
-  // // wiegh down voxels at depth discontinuities
-  // Vector2f gradient;
-  // float gradient_weight = 0;
-  // if (imageGradient<float>(
-  //         depth_image, depth_rows, depth_cols,
-  //         u_px_center / static_cast<float>(depth_subsampling_factor), 10.f,
-  //         &gradient)) {
-  //   gradient_weight = -10 * gradient.norm();
-  // }
 
   return w_area * w_angle;  // in [0, 1]
 }
@@ -231,6 +206,20 @@ __device__ const TsdfVoxel* getNeighborVoxelAtIndex(
   return &block->voxels[voxel_idx.x()][voxel_idx.y()][voxel_idx.z()];
 }
 
+/**
+ * @brief Gets TSDF values at two positions at the same time. Where the surface
+ * is sampled around position1 and extrapolated to position2.
+ * This saves time, compared to two separate interpolations
+ *
+ * @param blocks neihbor blocks
+ * @param position1 first position to interpolate the surface distance at
+ * @param position2 second position to interpolate the surface distance at
+ * @param index1 voxel index of position1
+ * @param voxel_size
+ * @param sdf1 output sdf at position1
+ * @param sdf2 output sdf at position2
+ * @return __device__ if the interpolation was successful
+ */
 __device__ bool getTSDFValues(const TsdfBlock** blocks,
                               const Vector3f& position1,
                               const Vector3f& position2, const Index3D& index1,
@@ -270,11 +259,12 @@ __device__ bool getTSDFValues(const TsdfBlock** blocks,
 /**
  * @brief For the line between (x1, y1), (x2, y2) we find the intersection with
  * the x-axis.
+ * Solves y - y1 = (y2 - y1) / (x2 - x1) * (x - x1) = 0 for x
  *
- * @param x1
- * @param x2
- * @param y1
- * @param y2
+ * @param x1 x coordinate of point1
+ * @param x2 x coordinate of point2
+ * @param y1 y coordinate of point1
+ * @param y2 y coordinate of point2
  * @return __device__
  */
 __device__ inline float findIntersectionLinear(const float x1, const float x2,
@@ -282,6 +272,18 @@ __device__ inline float findIntersectionLinear(const float x1, const float x2,
   return x1 + (y1 / (y1 - y2)) * (x2 - x1);
 }
 
+/**
+ * @brief Finds the intersection of the ray starting at the given postion along
+ * the given direction with the TSDF surface. The distance along this ray is
+ * returned.
+ *
+ * @param blocks neighbor blocks
+ * @param voxel_size voxel size
+ * @param position stating position
+ * @param direction ray directions
+ * @param distance dinstance from position along dir until the intersection
+ * @return __device__ if an intersection could be found along the ray
+ */
 __device__ bool raycastToSurface(const TsdfBlock** blocks,
                                  const float voxel_size,
                                  const Vector3f& position,
@@ -307,12 +309,6 @@ __global__ void integrateBlocks(
     const float truncation_distance_m, const float max_weight,
     const float max_integration_distance, const int depth_subsample_factor,
     const TsdfBlock** tsdf_blocks, TexBlock** tex_ptrs) {
-  // TODO (rasaford)
-  // - Here we need to determine the TexVoxel direction first. (one projection
-  // is enough)
-  // - Backproject every pixel in the TexVoxel to the image and update it's
-  // color
-
   // Get - the image-space projection of the voxel center associated with this
   // thread
   Eigen::Vector2f u_px;
@@ -379,7 +375,7 @@ __global__ void integrateBlocks(
       texel_idx = Index2D(row, col);
       image_value = Color::Black();
 
-      // Orthogonal projection of texVoxel Tile to SDF surface
+      // Orthogonal projection of TexVoxel tile to SDF surface
       texel_pos = getCenterPositionForTexel(block_size, block_idx, voxel_idx,
                                             texel_idx, voxel_ptr->dir);
 
@@ -388,7 +384,7 @@ __global__ void integrateBlocks(
                             texel_pos, voxel_ptr->dir, &distance)) {
         continue;
       }
-      // printf("%f\n", distance);
+
       surface_pos =
           texel_pos + distance * tex::texDirToWorldVector(voxel_ptr->dir);
 
@@ -398,18 +394,19 @@ __global__ void integrateBlocks(
       if (!camera.project(surface_pos, &u_px)) {
         continue;
       }
-
+      // sample the color at the interpolated point
       if (!interpolation::interpolate2DLinear<Color>(
               color_image, u_px, color_rows, color_cols, &image_value)) {
         continue;
       }
-
+      // update the texel color
       updateTexel(image_value, voxel_ptr, texel_idx, measurement_weight,
                   max_weight);
     }
   }
   // Since the voxel_weight is read when updating the texels, it must be updated
-  // after all texels
+  // after all texels. This is a non-saturating filter version of the weighting
+  // rule described in TextureFusion
   voxel_ptr->weight = (measurement_weight + voxel_ptr->weight) / 2;
 }
 
