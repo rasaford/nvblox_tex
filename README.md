@@ -32,10 +32,22 @@ cd /usr/src/googletest && sudo cmake . && sudo cmake --build . --target install
 ```
 
 ## Build all executables
+In the project root do:
+
 ```bash
 mkdir build
 cd build
-cmake .. -G Ninja && make 
+cmake --no-warn-unused-cli \
+    -DCMAKE_EXPORT_COMPILE_COMMANDS:BOOL=TRUE \
+    -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo \
+    -DCMAKE_C_COMPILER:FILEPATH=/bin/x86_64-linux-gnu-gcc-9 \
+    -DCMAKE_CXX_COMPILER:FILEPATH=/bin/x86_64-linux-gnu-g++-9 \
+    -S ../nvblox \
+    -B . \
+    -G Ninja
+cmake --build . \
+      --config RegWithDebInfo \
+      --target tex_integration
 ```
 
 ## Run an example
