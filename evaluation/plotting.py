@@ -13,52 +13,76 @@ import matplotlib
 import numpy as np
 from matplotlib import pyplot as plt
 
-matplotlib.style.use('ggplot')
+matplotlib.rcParams['mathtext.fontset'] = 'stix'
+matplotlib.rcParams['font.family'] = 'STIXGeneral'
+# matplotlib.style.use('ggplot')
 
 TIME_SCALE = 1000.
 BAR_WIDTH = 0.75
 
 
 def plot_gpu_usage(data_dir: str):
-    plt.figure(figsize=(10, 5))
+    plt.figure(figsize=(6, 3))
 
+    # keep = [
+    #     "NVT_Q1_01",
+    #     "NV_Q1_01",
+    #     "NV_Q1_04",
+    # ]
+    # keep = [
+    #     "NVT_Q1_02",
+    #     "Tf_Q1_01",
+    #     # "NV_Q1_01",
+    #     # "NV_Q1_04",
+    # ]
     keep = [
+        "NVT_Q2_2x2_0.01",
+        "NVT_Q2_2x2_0.02",
+        "NVT_Q2_2x2_0.04",
+        "NVT_Q2_2x2_0.08",
         "NVT_Q2_4x4_0.01",
         "NVT_Q2_4x4_0.02",
         "NVT_Q2_4x4_0.04",
         "NVT_Q2_4x4_0.08",
-        "NVT_Q2_4x4_0.16",
-
+        "NVT_Q2_8x8_0.01",
+        "NVT_Q2_8x8_0.02",
+        "NVT_Q2_8x8_0.04",
+        "NVT_Q2_8x8_0.08",
+        "NVT_Q2_16x16_0.01",
+        "NVT_Q2_16x16_0.02",
+        "NVT_Q2_16x16_0.04",
+        "NVT_Q2_16x16_0.08",
     ]
     # names = {
-    #     "NVT_Q1_01": "nvblox_tex v=0.04, t=8x8",
-    #     "NVT_Q1_02": "nvblox_tex v=0.01, t=4x4",
-    #     "NV_Q1_01": "nvblox v=0.04",
+    #     "NVT_Q1_01": "nvblox_tex $\\nu = 0.04m, \\tau = 8 \\times 8 px$",
+    #     "NVT_Q1_02": "nvblox_tex $\\nu=0.01m , \\tau =4 \\times 4px$",
+    #     "TF_Q1_01": "TextureFusion $\\nu = 0.01m, \\tau = 4 \\times 4 px$",
+    #     "NV_Q1_01": "nvblox $\\nu = 0.04m$",
     #     "NV_Q1_02": "nvblox v=0.02",
     #     "NV_Q1_03": "nvblox v=0.01",
-    #     "NV_Q1_04": "nvblox v=0.009",
+    #     "NV_Q1_04": "nvblox $\\nu = 0.009m$",
     # }
     names = {
-        "NVT_Q2_2x2_0.01": "nvblox_tex v=0.01, t=2x2",
-        "NVT_Q2_2x2_0.02": "nvblox_tex v=0.02, t=2x2",
-        "NVT_Q2_2x2_0.04": "nvblox_tex v=0.04, t=2x2",
-        "NVT_Q2_2x2_0.08": "nvblox_tex v=0.08, t=2x2",
-        "NVT_Q2_2x2_0.16": "nvblox_tex v=0.16, t=2x2",
-        "NVT_Q2_4x4_0.01": "nvblox_tex v=0.01, t=4x4",
-        "NVT_Q2_4x4_0.02": "nvblox_tex v=0.02, t=4x4",
-        "NVT_Q2_4x4_0.04": "nvblox_tex v=0.04, t=4x4",
-        "NVT_Q2_4x4_0.08": "nvblox_tex v=0.08, t=4x4",
-        "NVT_Q2_4x4_0.16": "nvblox_tex v=0.16, t=4x4",
-        "NVT_Q2_8x8_0.01": "nvblox_tex v=0.01, t=8x8",
-        "NVT_Q2_8x8_0.02": "nvblox_tex v=0.02, t=8x8",
-        "NVT_Q2_8x8_0.04": "nvblox_tex v=0.04, t=8x8",
-        "NVT_Q2_8x8_0.08": "nvblox_tex v=0.08, t=8x8",
-        "NVT_Q2_8x8_0.16": "nvblox_tex v=0.16, t=8x8",
-        "NVT_Q2_16x16_0.01": "nvblox_tex v=0.01, t=16x16",
-        "NVT_Q2_16x16_0.02": "nvblox_tex v=0.02, t=16x16",
-        "NVT_Q2_16x16_0.04": "nvblox_tex v=0.04, t=16x16",
-        "NVT_Q2_16x16_0.08": "nvblox_tex v=0.08, t=16x16",
-        "NVT_Q2_16x16_0.16": "nvblox_tex v=0.16, t=16x16",
+        "NVT_Q2_2x2_0.01": "$\\nu=0.01, \\tau=2 \\times 2 px$",
+        "NVT_Q2_2x2_0.02": "$\\nu=0.02, \\tau=2 \\times 2 px$",
+        "NVT_Q2_2x2_0.04": "$\\nu=0.04, \\tau=2 \\times 2 px$",
+        "NVT_Q2_2x2_0.08": "$\\nu=0.08, \\tau=2 \\times 2 px$",
+        "NVT_Q2_2x2_0.16": "$\\nu=0.16, \\tau=2 \\times 2 px$",
+        "NVT_Q2_4x4_0.01": "$\\nu=0.01, \\tau=4 \\times 4 px$",
+        "NVT_Q2_4x4_0.02": "$\\nu=0.02, \\tau=4 \\times 4 px$",
+        "NVT_Q2_4x4_0.04": "$\\nu=0.04, \\tau=4 \\times 4 px$",
+        "NVT_Q2_4x4_0.08": "$\\nu=0.08, \\tau=4 \\times 4 px$",
+        "NVT_Q2_4x4_0.16": "$\\nu=0.16, \\tau=4 \\times 4 px$",
+        "NVT_Q2_8x8_0.01": "$\\nu=0.01, \\tau=8 \\times 8 px$",
+        "NVT_Q2_8x8_0.02": "$\\nu=0.02, \\tau=8 \\times 8 px$",
+        "NVT_Q2_8x8_0.04": "$\\nu=0.04, \\tau=8 \\times 8 px$",
+        "NVT_Q2_8x8_0.08": "$\\nu=0.08, \\tau=8 \\times 8 px$",
+        "NVT_Q2_8x8_0.16": "$\\nu=0.16, \\tau=8 \\times 8 px$",
+        "NVT_Q2_16x16_0.01": "$\\nu=0.01, \\tau=16 \\times 16 px$",
+        "NVT_Q2_16x16_0.02": "$\\nu=0.02, \\tau=16 \\times 16 px$",
+        "NVT_Q2_16x16_0.04": "$\\nu=0.04, \\tau=16 \\times 16 px$",
+        "NVT_Q2_16x16_0.08": "$\\nu=0.08, \\tau=16 \\times 16 px$",
+        "NVT_Q2_16x16_0.16": "$\\nu=0.16, \\tau=16 \\times 16 px$",
     }
 
     for path in sorted(glob.glob(os.path.join(data_dir, "*.gpu_usage.json"))):
@@ -87,17 +111,17 @@ def plot_gpu_usage(data_dir: str):
         temperature = np.array([sample["temperature"]
                                for sample in measurements])
 
-        plt.plot(times/60., memory_util, label=names[run_id])
+        plt.plot(times/60., memory_used, label=names[run_id])
 
     plt.xlabel("$min$")
     plt.ylabel("MiB")
     plt.title(f"GPU Memory Usage")
     plt.legend()
     plt.tight_layout()
-    plt.savefig("./plot_gpu1.png")
+    plt.savefig("./plot_gpu1.pdf")
     plt.show()
 
-    plt.figure(figsize=(10, 5))
+    plt.figure(figsize=(6, 3))
     plt.title("Max Memory Usage")
 
     labels = []
@@ -136,7 +160,7 @@ def plot_gpu_usage(data_dir: str):
     plt.ylabel("MiB")
     plt.xticks(rotation=90.)
     plt.tight_layout()
-    plt.savefig("./plot_gpu2.png")
+    plt.savefig("./plot_gpu2.pdf")
     plt.show()
 
 
@@ -224,14 +248,53 @@ def parse_nvblox_timings(path: str):
 
 
 def plot_processing_time(data_dir: str):
-    plt.figure(figsize=(5, 7))
+    plt.figure(figsize=(12, 3))
 
-    # ignore = ["NVT_Q1_02", "NV_Q1_02", "NV_Q1_03"]
-    ignore = ["NVT_Q1_01", "NV_Q1_01", "NV_Q1_02",
-              "NV_Q1_03", "NV_Q1_03", "NV_Q1_04", "TF_Q1_02"]
+    # ignore = [
+    #     "NVT_Q1_01",
+    #     "NV_Q1_01",
+    #     "NV_Q1_02",
+    #     "NV_Q1_03",
+    #       "NV_Q1_04",
+    #     "TF_Q1_02",
+    #     # "TF_Q1_01"
+    # ]
+    # ignore = ["NVT_Q1_01", "NV_Q1_01", "NV_Q1_02",
+    #           "NV_Q1_03", "NV_Q1_03", "NV_Q1_04", "TF_Q1_02"]
+    # names = {
+    #     "NVT_Q1_01": "nvblox_tex $\\nu = 0.04m, \\tau = 8 \\times 8 px$",
+    #     "NVT_Q1_02": "nvblox_tex $\\nu = 0.01m, \\tau = 4 \\times 4 px$",
+    #     "TF_Q1_01": "TextureFusion $\\nu = 0.01m, \\tau = 4 \\times 4 px$",
+    #     "NV_Q1_01": "nvblox $\\nu=0.04m$",
+    #     "NV_Q1_04": "nvblox $\\nu=0.009m$"
+    # }
+    ignore = [
+        "NVT_Q2_2x2_0.16",
+        "NVT_Q2_4x4_0.16",
+        "NVT_Q2_8x8_0.16",
+        "NVT_Q2_16x16_0.16",
+    ]
     names = {
-        "NVT_Q1_02": "nvblox_tex",
-        "TF_Q1_01": "texturefusion",
+        "NVT_Q2_2x2_0.01": "$\\nu=0.01$ \n $\\tau=2 \\times 2 px$",
+        "NVT_Q2_2x2_0.02": "$\\nu=0.02$ \n $\\tau=2 \\times 2 px$",
+        "NVT_Q2_2x2_0.04": "$\\nu=0.04$ \n $\\tau=2 \\times 2 px$",
+        "NVT_Q2_2x2_0.08": "$\\nu=0.08$ \n $\\tau=2 \\times 2 px$",
+        "NVT_Q2_2x2_0.16": "$\\nu=0.16$ \n $\\tau=2 \\times 2 px$",
+        "NVT_Q2_4x4_0.01": "$\\nu=0.01$ \n $\\tau=4 \\times 4 px$",
+        "NVT_Q2_4x4_0.02": "$\\nu=0.02$ \n $\\tau=4 \\times 4 px$",
+        "NVT_Q2_4x4_0.04": "$\\nu=0.04$ \n $\\tau=4 \\times 4 px$",
+        "NVT_Q2_4x4_0.08": "$\\nu=0.08$ \n $\\tau=4 \\times 4 px$",
+        "NVT_Q2_4x4_0.16": "$\\nu=0.16$ \n $\\tau=4 \\times 4 px$",
+        "NVT_Q2_8x8_0.01": "$\\nu=0.01$ \n $\\tau=8 \\times 8 px$",
+        "NVT_Q2_8x8_0.02": "$\\nu=0.02$ \n $\\tau=8 \\times 8 px$",
+        "NVT_Q2_8x8_0.04": "$\\nu=0.04$ \n $\\tau=8 \\times 8 px$",
+        "NVT_Q2_8x8_0.08": "$\\nu=0.08$ \n $\\tau=8 \\times 8 px$",
+        "NVT_Q2_8x8_0.16": "$\\nu=0.16$ \n $\\tau=8 \\times 8 px$",
+        "NVT_Q2_16x16_0.01": "$\\nu=0.01$ \n $\\tau=16 \\times 16 px$",
+        "NVT_Q2_16x16_0.02": "$\\nu=0.02$ \n $\\tau=16 \\times 16 px$",
+        "NVT_Q2_16x16_0.04": "$\\nu=0.04$ \n $\\tau=16 \\times 16 px$",
+        "NVT_Q2_16x16_0.08": "$\\nu=0.08$ \n $\\tau=16 \\times 16 px$",
+        "NVT_Q2_16x16_0.16": "$\\nu=0.16$ \n $\\tau=16 \\times 16 px$",
     }
 
     labels = []
@@ -247,7 +310,7 @@ def plot_processing_time(data_dir: str):
     total_time = []
     total_time_std = []
 
-    for path in sorted(glob.glob(os.path.join(data_dir, "*.timings.txt"))):
+    for path in reversed(sorted(glob.glob(os.path.join(data_dir, "*.timings.txt")))):
 
         run_id = Path(path).stem.replace(".timings", "")
         if run_id in ignore:
@@ -337,8 +400,9 @@ def plot_processing_time(data_dir: str):
     plt.ylabel("$ms$")
     plt.title("Mean integration time per frame")
     plt.legend()
+    # plt.xticks(rotation=90.)
     plt.tight_layout()
-    plt.savefig("./plot.png")
+    plt.savefig("./plot.pdf")
     plt.show()
 
 
@@ -349,5 +413,5 @@ if __name__ == "__main__":
                         help="Directory of the sample")
     args = parser.parse_args()
 
-    plot_gpu_usage(args.data_dir)
+    # plot_gpu_usage(args.data_dir)
     plot_processing_time(args.data_dir)
