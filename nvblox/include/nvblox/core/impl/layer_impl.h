@@ -16,10 +16,12 @@ limitations under the License.
 #pragma once
 
 #include <glog/logging.h>
+#include <algorithm>
 
 #include "nvblox/core/accessors.h"
 #include "nvblox/core/indexing.h"
 #include "nvblox/core/types.h"
+#include "nvblox/utils/timing.h"
 
 namespace nvblox {
 
@@ -62,6 +64,82 @@ typename BlockType::Ptr BlockLayer<BlockType>::allocateBlockAtIndex(
         blocks_.emplace(index, BlockType::allocate(memory_type_));
     return insert_status.first->second;
   }
+}
+template <typename BlockType>
+void BlockLayer<BlockType>::evictOldBlocks(
+    const std::vector<Index3D>& block_indices) {
+  // TODO(rasaford) this is O(n^2) improve this using hashing or sorting
+  for (auto it = device_blocks_.begin(); it != device_blocks_.end();) {
+    // std::cout << "t";
+    Index3D block_idx = *it;
+    bool is_old = std::find(block_indices.begin(), block_indices.end(), block_idx) != block_indices.end();
+    // evict the block if it's not in the vector of new block_indices
+    if (is_old && evictBlockAtIndex(block_idx).get() != nullptr) {
+      it = device_blocks_.erase(it);
+    } else {
+      it++;
+    }
+  }
+}
+
+template <typename BlockType>
+void BlockLayer<BlockType>::prefetchBlocks(
+    const std::vector<Index3D>& block_indices) {
+  for (const auto& block_idx : block_indices) {
+    prefetchBlockAtIndex(block_idx);
+  }
+}
+
+template <typename BlockType>
+typename BlockType::Ptr BlockLayer<BlockType>::prefetchBlockAtIndex(
+    const Index3D& index) {
+  // prefetching only works on unified memory
+  if (memory_type_ != MemoryType::kUnified) {
+    return typename BlockType::Ptr();
+  }
+  timing::Timer allocate_timer("prefetch/prefetch/allocate");
+  typename BlockType::Ptr block = allocateBlockAtIndex(index);
+  allocate_timer.Stop();
+
+  timing::Timer prefetch_timer("prefetch/prefetch/prefetch");
+  if (device_blocks_.find(index) == device_blocks_.end()) {
+    // advise the driver to move the block to device memory
+    checkCudaErrors(cudaMemPrefetchAsync(block.get(), sizeof(BlockType),
+                                         device_, prefetch_stream_));
+    device_blocks_.insert(index);
+  }
+  prefetch_timer.Stop();
+  return block;
+}
+
+template <typename BlockType>
+typename BlockType::Ptr BlockLayer<BlockType>::evictBlockAtIndex(
+    const Index3D& index) {
+  if (memory_type_ != MemoryType::kUnified) {
+    return typename BlockType::Ptr();
+  }
+  typename BlockType::Ptr block = getBlockAtIndex(index);
+
+  // only evict the block from host memory if it has been allocated.
+  if (block.get() != nullptr) {
+    // evict the block to CPU/host memory
+    // std::cout << "*";
+    timing::Timer prefetch_timer("prefetch/evict/move");
+    checkCudaErrors(cudaMemPrefetchAsync(block.get(), sizeof(BlockType),
+                                         cudaCpuDeviceId, prefetch_stream_));
+    // keep the memory mapped in device memory but move it to host memory
+
+    // TODO(rasaford) check if this improves performance. Theoretically, it
+    // should as stated here:
+    // https://developer.nvidia.com/blog/improving-gpu-memory-oversubscription-performance/
+    checkCudaErrors(cudaMemAdvise(block.get(), sizeof(BlockType),
+                                  cudaMemAdviseSetAccessedBy, device_));
+    checkCudaErrors(cudaMemAdvise(block.get(), sizeof(BlockType),
+                                  cudaMemAdviseSetPreferredLocation,
+                                  cudaCpuDeviceId));
+    prefetch_timer.Stop();
+  }
+  return block;
 }
 
 // Block accessors by position.

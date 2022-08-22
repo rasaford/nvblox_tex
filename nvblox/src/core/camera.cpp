@@ -172,10 +172,7 @@ void BoundingPlane::setFromDistanceNormal(const Vector3f& normal,
 }
 
 bool BoundingPlane::isPointInside(const Vector3f& point) const {
-  if (point.dot(normal_) >= distance_) {
-    return true;
-  }
-  return false;
+  return point.dot(normal_) >= distance_;
 }
 
 }  // namespace nvblox

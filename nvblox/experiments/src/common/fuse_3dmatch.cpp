@@ -335,7 +335,7 @@ TexFuse3DMatch::TexFuse3DMatch(const std::string& base_path,
       // far, we require the voxel data to be accessible on the GPU AND CPU.
       // Therefore, we use unified memory at the moment. Once texturing on the
       // GPU is implemented this should be switched back to MemoryType::kDevice
-      // to avoid copying unnecessarily to avoid copying unnecessarily.
+      // to avoid copying unnecessarily.
       mapper_(voxel_size, MemoryType::kUnified) {
   // Params
   mapper_.mesh_integrator().min_weight() = 2.0f;

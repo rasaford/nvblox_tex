@@ -58,8 +58,16 @@ class BlockLayer : public BaseLayer {
   BlockLayer(float block_size, MemoryType memory_type)
       : block_size_(block_size),
         memory_type_(memory_type),
-        gpu_layer_view_up_to_date_(false) {}
-  virtual ~BlockLayer() {}
+        gpu_layer_view_up_to_date_(false) {
+    // get the currently active device
+    cudaGetDevice(&device_);
+    // create the prefetching stream
+    cudaStreamCreate(&prefetch_stream_);
+  };
+  virtual ~BlockLayer() {
+    // clean up the prefetching stream
+    cudaStreamDestroy(prefetch_stream_);
+  };
 
   // (Deep) Copy disabled
   // NOTE(alexmillane): We could write these if needed in the future
@@ -74,6 +82,22 @@ class BlockLayer : public BaseLayer {
   typename BlockType::Ptr getBlockAtIndex(const Index3D& index);
   typename BlockType::ConstPtr getBlockAtIndex(const Index3D& index) const;
   typename BlockType::Ptr allocateBlockAtIndex(const Index3D& index);
+
+  // Prefetching and eviction are used for memory management at the block level.
+  // Evicts old blocks from device to host memory asynchronously
+  void evictOldBlocks(const std::vector<Index3D>& block_indices);
+
+  // Prefetches the given blocks to device memory (performs an allocation if
+  // necessary)
+  void prefetchBlocks(const std::vector<Index3D>& block_indices);
+
+  // Blocks the current thread until all previously queued prefetching
+  // operations are completed.
+  void waitForPrefetch() {
+    if (prefetch_stream_ != nullptr) {
+      checkCudaErrors(cudaStreamSynchronize(prefetch_stream_));
+    }
+  };
 
   // Block accessors by position.
   typename BlockType::Ptr getBlockAtPosition(const Vector3f& position);
@@ -101,6 +125,16 @@ class BlockLayer : public BaseLayer {
   GPULayerViewType getGpuLayerView() const;
 
  protected:
+  // Prefetching a block moves it to device memory in an asynchronous manner.
+  typename BlockType::Ptr prefetchBlockAtIndex(const Index3D& index);
+
+  // Eviction moves a block from device to host memory in an asynchronously
+  // NOTE(rasaford): It seems that the CUDA driver does not evict pages that
+  // have been prefetched to the host/CPU immediately. The exact time of the
+  // eviction is unspecified behavior. For more informaiton see:
+  // https://stackoverflow.com/questions/70234590/cuda-unified-memory-pages-accessed-in-cpu-but-not-evicted-from-gpu
+  typename BlockType::Ptr evictBlockAtIndex(const Index3D& index);
+
   const float block_size_;
   const MemoryType memory_type_;
 
@@ -117,6 +151,14 @@ class BlockLayer : public BaseLayer {
   /// - The "mutable" here is to enable caching in const member functions.
   mutable bool gpu_layer_view_up_to_date_;
   mutable std::unique_ptr<GPULayerViewType> gpu_layer_view_;
+
+  // CUDA stream we use for prefetching block data
+  cudaStream_t prefetch_stream_ = nullptr;
+  // ID of the target device to use as the prefetching target
+  int device_ = -1;
+  // Set of all blocks which will eventually be on the device (as soon as
+  // prefetch_stream has completed all operations)
+  Index3DSet device_blocks_;
 };
 
 template <typename VoxelType>

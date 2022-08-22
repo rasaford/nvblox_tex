@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 #pragma once
+#include "nvblox/utils/timing.h"
 
 namespace nvblox {
 
@@ -49,9 +50,20 @@ __host__ std::vector<const BlockType*> getBlockPtrsFromIndices(
 template <typename VoxelType>
 void allocateBlocksWhereRequired(const std::vector<Index3D>& block_indices,
                                  BlockLayer<VoxelBlock<VoxelType>>* layer) {
-  for (const Index3D& block_index : block_indices) {
-    layer->allocateBlockAtIndex(block_index);
-  }
+  std::cout << "evicting pages" << std::endl;
+  timing::Timer evict_timer("prefetch/evict");
+  layer->evictOldBlocks(block_indices);
+  evict_timer.Stop();
+
+  std::cout << "prefetching " << block_indices.size() << " blocks."
+            << std::endl;
+  timing::Timer prefetch_timer("prefetch/prefetch");
+  layer->prefetchBlocks(block_indices);
+  prefetch_timer.Stop();
+
+  // for (const Index3D& block_index : block_indices) {
+  //   layer->allocateBlockAtIndex(block_index);
+  // }
 }
 
 }  // namespace nvblox
