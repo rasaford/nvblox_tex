@@ -125,7 +125,6 @@ __device__ bool computeTSDFGradient(const TsdfBlock** neighbor_blocks,
         dist_z_plus = 0, dist_z_minus = 0;
   bool valid = true;
 
-  const TsdfVoxel* v;
   // get tsdf values for each neighboring voxel to the current one
   // clang-format off
   valid &= trilinearInterpolation(neighbor_blocks, position + Vector3f(v_quarter, 0.f,        0.f), voxel_index, voxel_size, &dist_x_plus);

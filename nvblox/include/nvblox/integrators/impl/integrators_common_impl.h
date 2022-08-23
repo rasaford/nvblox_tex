@@ -50,7 +50,7 @@ __host__ std::vector<const BlockType*> getBlockPtrsFromIndices(
 template <typename VoxelType>
 void allocateBlocksWhereRequired(const std::vector<Index3D>& block_indices,
                                  BlockLayer<VoxelBlock<VoxelType>>* layer) {
-  std::cout << "evicting pages" << std::endl;
+  std::cout << "evicting " <<  std::endl;
   timing::Timer evict_timer("prefetch/evict");
   layer->evictOldBlocks(block_indices);
   evict_timer.Stop();

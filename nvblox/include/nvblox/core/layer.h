@@ -18,6 +18,7 @@ limitations under the License.
 #include <memory>
 #include <vector>
 
+#include "nvblox/core/allocator.h"
 #include "nvblox/core/blox.h"
 #include "nvblox/core/hash.h"
 #include "nvblox/core/traits.h"
@@ -128,13 +129,6 @@ class BlockLayer : public BaseLayer {
   // Prefetching a block moves it to device memory in an asynchronous manner.
   typename BlockType::Ptr prefetchBlockAtIndex(const Index3D& index);
 
-  // Eviction moves a block from device to host memory in an asynchronously
-  // NOTE(rasaford): It seems that the CUDA driver does not evict pages that
-  // have been prefetched to the host/CPU immediately. The exact time of the
-  // eviction is unspecified behavior. For more informaiton see:
-  // https://stackoverflow.com/questions/70234590/cuda-unified-memory-pages-accessed-in-cpu-but-not-evicted-from-gpu
-  typename BlockType::Ptr evictBlockAtIndex(const Index3D& index);
-
   const float block_size_;
   const MemoryType memory_type_;
 
@@ -159,6 +153,7 @@ class BlockLayer : public BaseLayer {
   // Set of all blocks which will eventually be on the device (as soon as
   // prefetch_stream has completed all operations)
   Index3DSet device_blocks_;
+  alloc::Allocator<BlockType> allocator_;
 };
 
 template <typename VoxelType>

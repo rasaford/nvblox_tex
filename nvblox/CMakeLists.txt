@@ -104,6 +104,7 @@ add_library(nvblox_lib SHARED
     src/core/interpolation_3d.cpp
     src/core/mapper.cpp
     src/core/voxels.cpp
+    src/core/cuda/allocator.cu
     src/datasets/image_loader.cpp
     src/datasets/parse_3dmatch.cpp
     src/integrators/cuda/frustum.cu

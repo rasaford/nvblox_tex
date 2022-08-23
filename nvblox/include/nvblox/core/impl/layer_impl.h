@@ -23,6 +23,14 @@ limitations under the License.
 #include "nvblox/core/types.h"
 #include "nvblox/utils/timing.h"
 
+// Pads the given size to the page size (size has to be a power of 2)
+#define ALIGN_SIZE(addr, size) \
+  (reinterpret_cast<size_t>(addr) + size - 1) & ~(size - 1)
+// round addr down to page size
+#define ALIGN_PAGE(addr, size) reinterpret_cast<size_t>(addr) & ~(size - 1)
+#define PAGE_IDX(addr) reinterpret_cast<size_t>(addr) >> 12
+#define PAGE_SIZE 4 * 1024
+
 namespace nvblox {
 
 // Block accessors by index.
@@ -69,77 +77,38 @@ template <typename BlockType>
 void BlockLayer<BlockType>::evictOldBlocks(
     const std::vector<Index3D>& block_indices) {
   // TODO(rasaford) this is O(n^2) improve this using hashing or sorting
+
+  int evicts = 0;
   for (auto it = device_blocks_.begin(); it != device_blocks_.end();) {
-    // std::cout << "t";
     Index3D block_idx = *it;
-    bool is_old = std::find(block_indices.begin(), block_indices.end(), block_idx) != block_indices.end();
+    timing::Timer find_timer("prefetch/evict/find");
+    bool is_old = std::find(block_indices.begin(), block_indices.end(),
+                            block_idx) != block_indices.end();
+    find_timer.Stop();
     // evict the block if it's not in the vector of new block_indices
-    if (is_old && evictBlockAtIndex(block_idx).get() != nullptr) {
+    if (is_old) {
+      BlockType* ptr = allocator_.toHost(block_idx);
+      evicts++;
       it = device_blocks_.erase(it);
+      blocks_.emplace(block_idx,
+                      unified_ptr<BlockType>(ptr, MemoryType::kHost));
     } else {
       it++;
     }
   }
+  std::cout << "evicted " << evicts << std::endl;
 }
 
 template <typename BlockType>
 void BlockLayer<BlockType>::prefetchBlocks(
     const std::vector<Index3D>& block_indices) {
-  for (const auto& block_idx : block_indices) {
-    prefetchBlockAtIndex(block_idx);
+  for (int i = 0; i < block_indices.size(); i++) {
+    BlockType* ptr = allocator_.toDevice(block_indices[i]);
+    typename BlockType::Ptr u_ptr =
+        unified_ptr<BlockType>(ptr, MemoryType::kUnified);
+    blocks_.emplace(block_indices[i], u_ptr);
+    device_blocks_.emplace(block_indices[i]);
   }
-}
-
-template <typename BlockType>
-typename BlockType::Ptr BlockLayer<BlockType>::prefetchBlockAtIndex(
-    const Index3D& index) {
-  // prefetching only works on unified memory
-  if (memory_type_ != MemoryType::kUnified) {
-    return typename BlockType::Ptr();
-  }
-  timing::Timer allocate_timer("prefetch/prefetch/allocate");
-  typename BlockType::Ptr block = allocateBlockAtIndex(index);
-  allocate_timer.Stop();
-
-  timing::Timer prefetch_timer("prefetch/prefetch/prefetch");
-  if (device_blocks_.find(index) == device_blocks_.end()) {
-    // advise the driver to move the block to device memory
-    checkCudaErrors(cudaMemPrefetchAsync(block.get(), sizeof(BlockType),
-                                         device_, prefetch_stream_));
-    device_blocks_.insert(index);
-  }
-  prefetch_timer.Stop();
-  return block;
-}
-
-template <typename BlockType>
-typename BlockType::Ptr BlockLayer<BlockType>::evictBlockAtIndex(
-    const Index3D& index) {
-  if (memory_type_ != MemoryType::kUnified) {
-    return typename BlockType::Ptr();
-  }
-  typename BlockType::Ptr block = getBlockAtIndex(index);
-
-  // only evict the block from host memory if it has been allocated.
-  if (block.get() != nullptr) {
-    // evict the block to CPU/host memory
-    // std::cout << "*";
-    timing::Timer prefetch_timer("prefetch/evict/move");
-    checkCudaErrors(cudaMemPrefetchAsync(block.get(), sizeof(BlockType),
-                                         cudaCpuDeviceId, prefetch_stream_));
-    // keep the memory mapped in device memory but move it to host memory
-
-    // TODO(rasaford) check if this improves performance. Theoretically, it
-    // should as stated here:
-    // https://developer.nvidia.com/blog/improving-gpu-memory-oversubscription-performance/
-    checkCudaErrors(cudaMemAdvise(block.get(), sizeof(BlockType),
-                                  cudaMemAdviseSetAccessedBy, device_));
-    checkCudaErrors(cudaMemAdvise(block.get(), sizeof(BlockType),
-                                  cudaMemAdviseSetPreferredLocation,
-                                  cudaCpuDeviceId));
-    prefetch_timer.Stop();
-  }
-  return block;
 }
 
 // Block accessors by position.

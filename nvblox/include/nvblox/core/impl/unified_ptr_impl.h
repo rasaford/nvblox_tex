@@ -118,18 +118,18 @@ unified_ptr<T>::unified_ptr(unified_ptr<T>&& other)
 template <typename T>
 struct Deleter {
   static void destroy(T* ptr, MemoryType memory_type) {
-    if (memory_type == MemoryType::kUnified) {
-      ptr->~T();
-      checkCudaErrors(
-          cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
-    } else if (memory_type == MemoryType::kDevice) {
-      checkCudaErrors(
-          cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
-    } else {
-      ptr->~T();
-      checkCudaErrors(
-          cudaFreeHost(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
-    }
+    // if (memory_type == MemoryType::kUnified) {
+    //   ptr->~T();
+    //   checkCudaErrors(
+    //       cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
+    // } else if (memory_type == MemoryType::kDevice) {
+    //   checkCudaErrors(
+    //       cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
+    // } else {
+    //   ptr->~T();
+    //   checkCudaErrors(
+    //       cudaFreeHost(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
+    // }
   }
 };
 
