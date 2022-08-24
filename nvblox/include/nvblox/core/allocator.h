@@ -3,6 +3,7 @@
 #pragma once
 
 #include <memory.h>
+#include <unordered_map>
 #include <vector>
 #include "nvblox/core/blox.h"
 #include "nvblox/core/hash.h"
@@ -19,20 +20,19 @@ class HostAllocator {
  public:
   static inline T* allocate(size_t size, int device) {
     T* ptr;
-    // NOTE(rasaford): Allocate host memory and map it to the GPU, such that it
-    // is able to access it as well (Zero-Copy). This is slower than direcly
-    // allcating the memory on the GPU since we are limited by PCIe speeds.
-    checkCudaErrors(cudaMallocHost(&ptr, size));
-    // checkCudaErrors(
-    //     cudaMemAdvise(ptr, size, cudaMemAdviseSetAccessedBy, device));
-    // checkCudaErrors(cudaMemAdvise(ptr, size,
-    // cudaMemAdviseSetPreferredLocation,
-    //                               cudaCpuDeviceId));
+    // NOTE(rasaford): Allocate Host memory by allocating Unified Memory and
+    // setting the preferred location to the CPU. For more details see:
+    // https://developer.nvidia.com/blog/improving-gpu-memory-oversubscription-performance/
+    checkCudaErrors(cudaMallocManaged(&ptr, size));
+    checkCudaErrors(cudaMemAdvise(ptr, size, cudaMemAdviseSetPreferredLocation,
+                                  cudaCpuDeviceId));
+    checkCudaErrors(
+        cudaMemAdvise(ptr, size, cudaMemAdviseSetAccessedBy, device));
     return ptr;
   }
   static inline void deallocate(T* ptr) {
     checkCudaErrors(
-        cudaFreeHost(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
+        cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
   }
 };
 
@@ -87,13 +87,15 @@ class ObjectPool {
 
   BlockType* alloc(Index3D index) {
     BlockType* address;
-    BlockType* result;
+    MemoryBlock* base_block = last_block_;
 
     if (first_deleted_ != nullptr) {
-      address = first_deleted_;
-      first_deleted_ = *((BlockType**)first_deleted_);
-      // TODO: only do new when we are on the host
-      result = new (address) BlockType();
+      base_block = reinterpret_cast<MemoryBlock*>(first_deleted_->base_block);
+      size_t block_idx = first_deleted_ - reinterpret_cast<FreeBlock*>(base_block->free_ptrs);
+      address = base_block->memory + block_idx;
+      FreeBlock* tmp = first_deleted_;
+      first_deleted_ = reinterpret_cast<FreeBlock*>(first_deleted_->next_free);
+      tmp->reset();
     } else {
       if (count_in_block_ >= block_capacity_) {
         allocate_block();
@@ -101,19 +103,37 @@ class ObjectPool {
       address = block_memory_;
       address += count_in_block_;
       count_in_block_++;
-      // TODO: only do new when we are on the host
-      result = new (address) BlockType();
     }
 
-    block_hash_.emplace(index, result);
-    return result;
+    // The allocated memory is not initialized. I.e. there could be another
+    // valid block there, if we did not write anything BlockType* result = new
+    // new (address) BlockType();
+
+    block_hash_.emplace(index, address);
+    base_memory_.emplace(address, base_block);
+    return address;
   }
 
-  void dealloc(Index3D index, BlockType* ptr) {
-    ptr->~BlockType();
+  bool dealloc(Index3D index, BlockType* ptr) {
+    // This block might be on the GPU, so we don't call the destructor on it,
+    // but just make the block free.
+    // ptr->~BlockType();
+    auto it = base_memory_.find(ptr);
+    // This BlockType* hase not been allocated. Return to prevent double free.
+    if (it == base_memory_.end()) {
+      return false;
+    }
+
+    // update the free block of *ptr to reflect the deallocated state
+    MemoryBlock* mem_block = it->second;
+    size_t block_idx = ptr - mem_block->memory;
+    FreeBlock* new_free_block = &mem_block->free_ptrs[block_idx];
+    new_free_block->next_free = first_deleted_;
+    new_free_block->base_block = mem_block;
+    first_deleted_ = new_free_block;
+
     block_hash_.erase(index);
-    *((BlockType**)ptr) = first_deleted_;
-    first_deleted_ = ptr;
+    return true;
   }
 
   BlockType* isAllocated(Index3D index) {
@@ -122,9 +142,22 @@ class ObjectPool {
   }
 
  private:
+  struct FreeBlock {
+    void* next_free = nullptr;
+    void* base_block = nullptr;
+
+    inline void reset() {
+      next_free = nullptr;
+      base_block = nullptr;
+    }
+  };
+
   struct MemoryBlock {
+  protected: 
     BlockType* memory;
     size_t capacity;
+    FreeBlock* free_ptrs;
+
     int device;
     MemoryBlock* next_block;
 
@@ -134,13 +167,20 @@ class ObjectPool {
         throw std::invalid_argument("capacity has to be greater than 1");
       }
       memory = Allocator::allocate(sizeof(BlockType) * capacity, device);
+      free_ptrs = new FreeBlock[capacity];
       if (memory == nullptr) {
         throw std::bad_alloc();
       }
     }
 
-    ~MemoryBlock() { Allocator::deallocate(memory); }
+    ~MemoryBlock() {
+      Allocator::deallocate(memory);
+      delete[] free_ptrs;
+    }
   };
+  
+  
+
 
  protected:
   void allocate_block() {
@@ -170,7 +210,7 @@ class ObjectPool {
 
   // allocator management
   BlockType* block_memory_;
-  BlockType* first_deleted_;
+  FreeBlock* first_deleted_;
   size_t count_in_block_;
   size_t block_capacity_;
   MemoryBlock first_block_;
@@ -178,6 +218,7 @@ class ObjectPool {
   size_t max_block_length_;
 
   BlockHash block_hash_;
+  std::unordered_map<BlockType*, MemoryBlock*> base_memory_;
 
   cudaStream_t stream;
   int device;
