@@ -106,8 +106,9 @@ void BlockLayer<BlockType>::prefetchBlocks(
     BlockType* ptr = allocator_.toDevice(block_indices[i]);
     typename BlockType::Ptr u_ptr =
         unified_ptr<BlockType>(ptr, MemoryType::kUnified);
-    blocks_.emplace(block_indices[i], u_ptr);
-    device_blocks_.emplace(block_indices[i]);
+    Index3D idx_copy = block_indices[i];
+    blocks_.emplace(idx_copy, u_ptr);
+    device_blocks_.insert(idx_copy);
   }
 }
 

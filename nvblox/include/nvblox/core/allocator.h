@@ -91,7 +91,11 @@ class ObjectPool {
 
     if (first_deleted_ != nullptr) {
       base_block = reinterpret_cast<MemoryBlock*>(first_deleted_->base_block);
-      size_t block_idx = first_deleted_ - reinterpret_cast<FreeBlock*>(base_block->free_ptrs);
+      size_t block_idx =
+          first_deleted_ - reinterpret_cast<FreeBlock*>(base_block->free_ptrs);
+      assert(("Block idx must be in MemoryBlock* capacity",
+              (block_idx > 0) && (block_idx < base_block->capacity)));
+
       address = base_block->memory + block_idx;
       FreeBlock* tmp = first_deleted_;
       first_deleted_ = reinterpret_cast<FreeBlock*>(first_deleted_->next_free);
@@ -102,6 +106,9 @@ class ObjectPool {
       }
       address = block_memory_;
       address += count_in_block_;
+      assert(
+          ("Block address must be in MemoryBlock* capacity",
+           (count_in_block_ > 0) && (count_in_block_ < last_block_->capacity)));
       count_in_block_++;
     }
 
@@ -126,8 +133,21 @@ class ObjectPool {
 
     // update the free block of *ptr to reflect the deallocated state
     MemoryBlock* mem_block = it->second;
+    // assert(("Dealloc ptr must be in memory block range",
+    //         (mem_block->memory <= ptr) &&
+    //             (ptr <= mem_block->memory + mem_block->capacity)));
+    if (!(mem_block->memory <= ptr) &&
+        (ptr < mem_block->memory + mem_block->capacity)) {
+      std::cerr << "ptr is not in memory block range" << std::endl;
+      return false;
+    }
+
     size_t block_idx = ptr - mem_block->memory;
     FreeBlock* new_free_block = &mem_block->free_ptrs[block_idx];
+    if (!(new_free_block < mem_block->free_ptrs + mem_block->capacity)) {
+      std::cerr << "new_free_block is not in block range" << std::endl;
+      return false;
+    }
     new_free_block->next_free = first_deleted_;
     new_free_block->base_block = mem_block;
     first_deleted_ = new_free_block;
@@ -153,7 +173,6 @@ class ObjectPool {
   };
 
   struct MemoryBlock {
-  protected: 
     BlockType* memory;
     size_t capacity;
     FreeBlock* free_ptrs;
@@ -178,9 +197,6 @@ class ObjectPool {
       delete[] free_ptrs;
     }
   };
-  
-  
-
 
  protected:
   void allocate_block() {
@@ -196,9 +212,10 @@ class ObjectPool {
       if (size >= max_block_length_) {
         size = max_block_length_;
       }
+      assert(("Allocated block size must be in the range [1, max_size]",
+              (1 <= size) && (size <= max_block_length_)));
     }
 
-    std::cout << "allocate new block " << size << std::endl;
     // create a new memory block and update the internal structure
     MemoryBlock* new_block = new MemoryBlock(size, device);
     last_block_->next_block = new_block;
