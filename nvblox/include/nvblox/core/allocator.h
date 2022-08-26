@@ -18,19 +18,23 @@ namespace alloc {
 template <typename T>
 class HostAllocator {
  public:
-  static inline T* allocate(size_t size, int device) {
+  static inline T* allocate(const size_t size, const int device,
+                            const cudaStream_t& stream) {
     T* ptr;
     // NOTE(rasaford): Allocate Host memory by allocating Unified Memory and
     // setting the preferred location to the CPU. For more details see:
     // https://developer.nvidia.com/blog/improving-gpu-memory-oversubscription-performance/
-    checkCudaErrors(cudaMallocManaged(&ptr, size));
+    checkCudaErrors(cudaMallocManaged(&ptr, size, cudaMemAttachGlobal));
     checkCudaErrors(cudaMemAdvise(ptr, size, cudaMemAdviseSetPreferredLocation,
                                   cudaCpuDeviceId));
+    // NOTE(rasaford): Create a mapping for the memory on the device, such that
+    // it can access it directly
     checkCudaErrors(
         cudaMemAdvise(ptr, size, cudaMemAdviseSetAccessedBy, device));
     return ptr;
   }
   static inline void deallocate(T* ptr) {
+    // Strip any possible const from the given type
     checkCudaErrors(
         cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
   }
@@ -39,17 +43,24 @@ class HostAllocator {
 template <typename T>
 class DeviceAllocator {
  public:
-  static inline T* allocate(size_t size, int device) {
+  static inline T* allocate(const size_t size, const int device,
+                            const cudaStream_t& stream) {
     T* ptr;
     // NOTE(rasaford): Allocate the memory on the GPU directly. Setting the
-    // preferred location, instructs the driver to keep this memory on the GPU
-    // if possible. If not, it can however still be swapped out to Host memory.
+    // preferred location and prefetching initially, instructs the driver to keep
+    // this memory on the GPU if possible. If not, it can however still be
+    // swapped out to Host memory.
     checkCudaErrors(cudaMallocManaged(&ptr, size, cudaMemAttachGlobal));
+    checkCudaErrors(cudaMemPrefetchAsync(ptr, size, device, stream));
     checkCudaErrors(
         cudaMemAdvise(ptr, size, cudaMemAdviseSetPreferredLocation, device));
     return ptr;
   }
-  static inline void deallocate(T* ptr) { checkCudaErrors(cudaFree(ptr)); }
+  static inline void deallocate(T* ptr) {
+    // Strip any possible const from the given type
+    checkCudaErrors(
+        cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
+  }
 };
 
 // Memory allocator for Device and host memory
@@ -64,7 +75,7 @@ class ObjectPool {
       : first_deleted_(nullptr),
         count_in_block_(0),
         block_capacity_(initial_capacity),
-        first_block_(initial_capacity, device),
+        first_block_(initial_capacity, device, stream),
         max_block_length_(max_block_length),
         device(device),
         stream(stream) {
@@ -93,8 +104,9 @@ class ObjectPool {
       base_block = reinterpret_cast<MemoryBlock*>(first_deleted_->base_block);
       size_t block_idx =
           first_deleted_ - reinterpret_cast<FreeBlock*>(base_block->free_ptrs);
-      assert(("Block idx must be in MemoryBlock* capacity",
-              (block_idx > 0) && (block_idx < base_block->capacity)));
+      if (block_idx >= base_block->capacity) {
+        throw std::runtime_error("Block idx must be in MemoryBlock* capacity");
+      }
 
       address = base_block->memory + block_idx;
       FreeBlock* tmp = first_deleted_;
@@ -103,12 +115,13 @@ class ObjectPool {
     } else {
       if (count_in_block_ >= block_capacity_) {
         allocate_block();
+        base_block = last_block_;
       }
-      address = block_memory_;
-      address += count_in_block_;
-      assert(
-          ("Block address must be in MemoryBlock* capacity",
-           (count_in_block_ > 0) && (count_in_block_ < last_block_->capacity)));
+      if (count_in_block_ > base_block->capacity) {
+        throw std::runtime_error(
+            "Block address must be in MemoryBlock* capacity");
+      }
+      address = block_memory_ + count_in_block_;
       count_in_block_++;
     }
 
@@ -116,8 +129,17 @@ class ObjectPool {
     // valid block there, if we did not write anything BlockType* result = new
     // new (address) BlockType();
 
-    block_hash_.emplace(index, address);
-    base_memory_.emplace(address, base_block);
+    if (address < base_block->memory ||
+        address >= base_block->memory + base_block->capacity) {
+      std::cerr << "address: " << address << " min: " << base_block->memory
+                << " max: " << base_block->memory + base_block->capacity
+                << std::endl;
+      throw std::runtime_error("invalid allocation ptr out of range");
+    }
+
+    block_hash_[index] = address;
+    base_memory_[(char*)address] = base_block;
+
     return address;
   }
 
@@ -125,10 +147,10 @@ class ObjectPool {
     // This block might be on the GPU, so we don't call the destructor on it,
     // but just make the block free.
     // ptr->~BlockType();
-    auto it = base_memory_.find(ptr);
+    auto it = base_memory_.find((char*)ptr);
     // This BlockType* hase not been allocated. Return to prevent double free.
     if (it == base_memory_.end()) {
-      return false;
+      throw std::runtime_error("ptr has not been allocated");
     }
 
     // update the free block of *ptr to reflect the deallocated state
@@ -136,23 +158,24 @@ class ObjectPool {
     // assert(("Dealloc ptr must be in memory block range",
     //         (mem_block->memory <= ptr) &&
     //             (ptr <= mem_block->memory + mem_block->capacity)));
-    if (!(mem_block->memory <= ptr) &&
-        (ptr < mem_block->memory + mem_block->capacity)) {
-      std::cerr << "ptr is not in memory block range" << std::endl;
-      return false;
+    if (mem_block->memory > ptr ||
+        ptr > mem_block->memory + mem_block->capacity) {
+      std::cerr << "ptr " << ptr << std::endl;
+      std::cerr << "base_block" << mem_block->memory << std::endl;
+      throw std::runtime_error("ptr is not in the base block memory range");
     }
 
     size_t block_idx = ptr - mem_block->memory;
     FreeBlock* new_free_block = &mem_block->free_ptrs[block_idx];
-    if (!(new_free_block < mem_block->free_ptrs + mem_block->capacity)) {
-      std::cerr << "new_free_block is not in block range" << std::endl;
-      return false;
+    if (new_free_block > mem_block->free_ptrs + mem_block->capacity) {
+      throw std::runtime_error("new_free_block is not in block range");
     }
-    new_free_block->next_free = first_deleted_;
-    new_free_block->base_block = mem_block;
+    new_free_block->next_free = reinterpret_cast<char*>(first_deleted_);
+    new_free_block->base_block = reinterpret_cast<char*>(mem_block);
     first_deleted_ = new_free_block;
 
     block_hash_.erase(index);
+    base_memory_.erase((char*)ptr);
     return true;
   }
 
@@ -163,8 +186,8 @@ class ObjectPool {
 
  private:
   struct FreeBlock {
-    void* next_free = nullptr;
-    void* base_block = nullptr;
+    char* next_free = nullptr;
+    char* base_block = nullptr;
 
     inline void reset() {
       next_free = nullptr;
@@ -175,17 +198,20 @@ class ObjectPool {
   struct MemoryBlock {
     BlockType* memory;
     size_t capacity;
+    size_t count;
     FreeBlock* free_ptrs;
 
     int device;
     MemoryBlock* next_block;
 
-    MemoryBlock(size_t capacity, int device)
-        : capacity(capacity), device(device), next_block(nullptr) {
+
+    MemoryBlock(size_t capacity, int device, const cudaStream_t& stream)
+        : count(0), capacity(capacity), device(device), next_block(nullptr) {
       if (capacity < 1) {
         throw std::invalid_argument("capacity has to be greater than 1");
       }
-      memory = Allocator::allocate(sizeof(BlockType) * capacity, device);
+      memory =
+          Allocator::allocate(sizeof(BlockType) * capacity, device, stream);
       free_ptrs = new FreeBlock[capacity];
       if (memory == nullptr) {
         throw std::bad_alloc();
@@ -217,7 +243,7 @@ class ObjectPool {
     }
 
     // create a new memory block and update the internal structure
-    MemoryBlock* new_block = new MemoryBlock(size, device);
+    MemoryBlock* new_block = new MemoryBlock(size, device, stream);
     last_block_->next_block = new_block;
     last_block_ = new_block;
     block_memory_ = new_block->memory;
@@ -235,7 +261,7 @@ class ObjectPool {
   size_t max_block_length_;
 
   BlockHash block_hash_;
-  std::unordered_map<BlockType*, MemoryBlock*> base_memory_;
+  std::unordered_map<char*, MemoryBlock*> base_memory_;
 
   cudaStream_t stream;
   int device;
