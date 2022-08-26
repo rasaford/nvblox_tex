@@ -73,6 +73,7 @@ typename BlockType::Ptr BlockLayer<BlockType>::allocateBlockAtIndex(
     return insert_status.first->second;
   }
 }
+
 template <typename BlockType>
 void BlockLayer<BlockType>::evictOldBlocks(
     const std::vector<Index3D>& block_indices) {
@@ -87,14 +88,15 @@ void BlockLayer<BlockType>::evictOldBlocks(
     find_timer.Stop();
     // evict the block if it's not in the vector of new block_indices
     if (is_old) {
-      BlockType* ptr = allocator_.toHost(block_idx);
-      evicts++;
-      it = device_blocks_.erase(it);
-      blocks_.emplace(block_idx,
-                      unified_ptr<BlockType>(ptr, MemoryType::kHost));
-    } else {
-      it++;
+      auto iit = blocks_.find(block_idx);
+      if (iit != blocks_.end()) {
+        evicts++;
+        it = device_blocks_.erase(it);
+        blocks_.emplace(block_idx, allocator_.toHost(iit->second));
+        continue;
+      }
     }
+    it++;
   }
   std::cout << "evicted " << evicts << std::endl;
 }
@@ -103,11 +105,16 @@ template <typename BlockType>
 void BlockLayer<BlockType>::prefetchBlocks(
     const std::vector<Index3D>& block_indices) {
   for (int i = 0; i < block_indices.size(); i++) {
-    BlockType* ptr = allocator_.toDevice(block_indices[i]);
-    typename BlockType::Ptr u_ptr =
-        unified_ptr<BlockType>(ptr, MemoryType::kUnified);
     Index3D idx_copy = block_indices[i];
-    blocks_.emplace(idx_copy, u_ptr);
+    auto it = blocks_.find(idx_copy);
+    typename BlockType::Ptr known_ptr;
+    if (it != blocks_.end()) {
+      known_ptr = it->second;
+    } else {
+      // The block has not been allocated --> invalidate the GPU Hash view
+      gpu_layer_view_up_to_date_ = false;
+    }
+    blocks_.emplace(idx_copy, allocator_.toDevice(known_ptr));
     device_blocks_.insert(idx_copy);
   }
 }

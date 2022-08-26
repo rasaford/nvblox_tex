@@ -33,20 +33,28 @@ template <typename T, typename... Args>
 typename _Unified_if<T>::_Single_object make_unified(MemoryType memory_type,
                                                      Args&&... args) {
   T* cuda_ptr = nullptr;
-  if (memory_type == MemoryType::kDevice) {
-    // No constructor (or destructor, hence the check)
-    CHECK(std::is_trivially_destructible<T>::value);
-    checkCudaErrors(cudaMalloc(&cuda_ptr, sizeof(T)));
-    return unified_ptr<T>(cuda_ptr, memory_type);
-  } else if (memory_type == MemoryType::kUnified) {
-    // Constructor called
-    checkCudaErrors(
-        cudaMallocManaged(&cuda_ptr, sizeof(T), cudaMemAttachGlobal));
-    return unified_ptr<T>(new (cuda_ptr) T(args...), memory_type);
-  } else {
-    // Constructor called
-    checkCudaErrors(cudaMallocHost(&cuda_ptr, sizeof(T)));
-    return unified_ptr<T>(new (cuda_ptr) T(args...), memory_type);
+
+  switch (memory_type) {
+    case MemoryType::kDevice:
+      // No constructor (or destructor, hence the check)
+      CHECK(std::is_trivially_destructible<T>::value);
+      checkCudaErrors(cudaMalloc(&cuda_ptr, sizeof(T)));
+      return unified_ptr<T>(cuda_ptr, memory_type);
+    case MemoryType::kUnified:
+      // Constructor called
+      checkCudaErrors(
+          cudaMallocManaged(&cuda_ptr, sizeof(T), cudaMemAttachGlobal));
+      return unified_ptr<T>(new (cuda_ptr) T(args...), memory_type);
+    case MemoryType::kHost:
+      // Constructor called
+      checkCudaErrors(cudaMallocHost(&cuda_ptr, sizeof(T)));
+      return unified_ptr<T>(new (cuda_ptr) T(args...), memory_type);
+    case MemoryType::kPool:
+    default:
+      // kPool can only be created by the respective pool
+      return unified_ptr<T>(cuda_ptr, memory_type);
+      break;
+      break;
   }
 }
 
@@ -61,19 +69,26 @@ typename _Unified_if<T>::_Unknown_bound make_unified(std::size_t size,
                                                      MemoryType memory_type) {
   typedef typename std::remove_extent<T>::type TNonArray;
   TNonArray* cuda_ptr = nullptr;
-  if (memory_type == MemoryType::kDevice) {
-    // No constructor
-    checkCudaErrors(cudaMalloc(&cuda_ptr, sizeof(TNonArray) * size));
-    return unified_ptr<T>(cuda_ptr, memory_type, size);
-  } else if (memory_type == MemoryType::kUnified) {
-    // Default constructor
-    checkCudaErrors(cudaMallocManaged(&cuda_ptr, sizeof(TNonArray) * size,
-                                      cudaMemAttachGlobal));
-    return unified_ptr<T>(new (cuda_ptr) TNonArray[size], memory_type, size);
-  } else {
-    // Default constructor
-    checkCudaErrors(cudaMallocHost(&cuda_ptr, sizeof(TNonArray) * size));
-    return unified_ptr<T>(new (cuda_ptr) TNonArray[size], memory_type, size);
+
+  switch (memory_type) {
+    case MemoryType::kDevice:
+      // No constructor
+      checkCudaErrors(cudaMalloc(&cuda_ptr, sizeof(TNonArray) * size));
+      return unified_ptr<T>(cuda_ptr, memory_type, size);
+    case MemoryType::kUnified:
+      // Default constructor
+      checkCudaErrors(cudaMallocManaged(&cuda_ptr, sizeof(TNonArray) * size,
+                                        cudaMemAttachGlobal));
+      return unified_ptr<T>(new (cuda_ptr) TNonArray[size], memory_type, size);
+    case MemoryType::kHost:
+      // Default constructor
+      checkCudaErrors(cudaMallocHost(&cuda_ptr, sizeof(TNonArray) * size));
+      return unified_ptr<T>(new (cuda_ptr) TNonArray[size], memory_type, size);
+    case MemoryType::kPool:
+    default:
+      // kPool can only be created by the respective pool
+      return unified_ptr<T>(cuda_ptr, memory_type);
+      break;
   }
 }
 
@@ -118,18 +133,32 @@ unified_ptr<T>::unified_ptr(unified_ptr<T>&& other)
 template <typename T>
 struct Deleter {
   static void destroy(T* ptr, MemoryType memory_type) {
-    // if (memory_type == MemoryType::kUnified) {
-    //   ptr->~T();
-    //   checkCudaErrors(
-    //       cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
-    // } else if (memory_type == MemoryType::kDevice) {
-    //   checkCudaErrors(
-    //       cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
-    // } else {
-    //   ptr->~T();
-    //   checkCudaErrors(
-    //       cudaFreeHost(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
-    // }
+    if (ptr == nullptr) {
+      return;
+    }
+    switch (memory_type) {
+      case MemoryType::kUnified:
+        ptr->~T();
+        checkCudaErrors(
+            cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
+        break;
+      case MemoryType::kDevice:
+        checkCudaErrors(
+            cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
+        break;
+      case MemoryType::kHost:
+        ptr->~T();
+        checkCudaErrors(cudaFreeHost(
+            const_cast<void*>(reinterpret_cast<void const*>(ptr))));
+        break;
+      // NOTE(rasaford) since pooled memory is shared among many pointers, the
+      // unified pointer degenerates into a weak_ptr (observing only) when used.
+      case MemoryType::kPool:
+        // ptr->~T();
+        break;
+      default:
+        break;
+    }
   }
 };
 
@@ -140,13 +169,23 @@ struct Deleter<T[]> {
     static_assert(
         std::is_trivially_destructible<T>::value,
         "Objects stored in unified_ptr<T[]> must be trivially destructible.");
-    if (memory_type == MemoryType::kDevice ||
-        memory_type == MemoryType::kUnified) {
-      checkCudaErrors(
-          cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
-    } else {
-      checkCudaErrors(
-          cudaFreeHost(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
+    if (ptr == nullptr) {
+      return;
+    }
+    switch (memory_type) {
+      case MemoryType::kDevice:
+      case MemoryType::kUnified:
+        checkCudaErrors(
+            cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
+        break;
+      case MemoryType::kHost:
+        checkCudaErrors(cudaFreeHost(
+            const_cast<void*>(reinterpret_cast<void const*>(ptr))));
+      // NOTE(rasaford) since pooled memory is shared among many pointers, the
+      // unified pointer degenerates into a weak_ptr (observing only) when used.
+      case MemoryType::kPool:
+      default:
+        break;
     }
   }
 };
