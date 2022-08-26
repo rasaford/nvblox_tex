@@ -12,6 +12,7 @@
 #include "nvblox/core/types.h"
 #include "nvblox/core/unified_ptr.h"
 #include "nvblox/gpu_hash/gpu_layer_view.h"
+#include "nvblox/utils/timing.h"
 
 namespace nvblox {
 namespace alloc {
@@ -26,6 +27,8 @@ class HostAllocator {
     // setting the preferred location to the CPU. For more details see:
     // https://developer.nvidia.com/blog/improving-gpu-memory-oversubscription-performance/
     checkCudaErrors(cudaMallocManaged(&ptr, size, cudaMemAttachGlobal));
+    checkCudaErrors(cudaMemPrefetchAsync(ptr, size, cudaCpuDeviceId, stream));
+    // checkCudaErrors(cudaMemsetAsync(ptr, 0, size, stream));
     checkCudaErrors(cudaMemAdvise(ptr, size, cudaMemAdviseSetPreferredLocation,
                                   cudaCpuDeviceId));
     // NOTE(rasaford): Create a mapping for the memory on the device, such that
@@ -36,8 +39,7 @@ class HostAllocator {
   }
   static inline void deallocate(T* ptr) {
     // Strip any possible const from the given type
-    checkCudaErrors(
-        cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
+    checkCudaErrors(cudaFree(ptr));
   }
 };
 
@@ -53,14 +55,14 @@ class DeviceAllocator {
     // swapped out to Host memory.
     checkCudaErrors(cudaMallocManaged(&ptr, size, cudaMemAttachGlobal));
     checkCudaErrors(cudaMemPrefetchAsync(ptr, size, device, stream));
+    // checkCudaErrors(cudaMemsetAsync(ptr, 0, size, stream));
     checkCudaErrors(
         cudaMemAdvise(ptr, size, cudaMemAdviseSetPreferredLocation, device));
     return ptr;
   }
   static inline void deallocate(T* ptr) {
     // Strip any possible const from the given type
-    checkCudaErrors(
-        cudaFree(const_cast<void*>(reinterpret_cast<void const*>(ptr))));
+    checkCudaErrors(cudaFree(ptr));
   }
 };
 
@@ -260,24 +262,36 @@ class Allocator {
   ~Allocator() { cudaStreamDestroy(stream); }
 
   typename BlockType::Ptr toDevice(typename BlockType::Ptr host_block) {
+    timing::Timer to_device_timer("prefetch/prefetch/to_device");
     BlockType* device_ptr = device_pool->alloc();
     BlockType* host_ptr = host_block.get();
 
     if (host_ptr != nullptr && host_pool->isAllocated(host_ptr)) {
-      cudaMemcpy(device_ptr, host_ptr, sizeof(BlockType), cudaMemcpyDefault);
+      timing::Timer to_device_dealloc("prefetch/prefetch/dealloc");
+      cudaMemcpyAsync(device_ptr, host_ptr, sizeof(BlockType),
+                      cudaMemcpyDefault, stream);
       host_pool->dealloc(host_ptr);
+      to_device_dealloc.Stop();
     }
+    to_device_timer.Stop();
     return unified_ptr<BlockType>(device_ptr, MemoryType::kPool);
   }
 
   typename BlockType::Ptr toHost(typename BlockType::Ptr device_block) {
+    timing::Timer to_host_timer("prefetch/evict/to_host");
     BlockType* host_ptr = host_pool->alloc();
     BlockType* device_ptr = device_block.get();
 
     if (device_ptr != nullptr && device_pool->isAllocated(device_ptr)) {
-      cudaMemcpy(host_ptr, device_ptr, sizeof(BlockType), cudaMemcpyDefault);
+      timing::Timer to_host_memcpy("prefetch/evict/memcpy");
+      cudaMemcpyAsync(host_ptr, device_ptr, sizeof(BlockType),
+                      cudaMemcpyDefault, stream);
+      to_host_memcpy.Stop();
+      timing::Timer to_host_dealloc("prefetch/evict/dealloc");
       device_pool->dealloc(device_ptr);
+      to_host_dealloc.Stop();
     }
+    to_host_timer.Stop();
     return unified_ptr<BlockType>(host_ptr, MemoryType::kPool);
   }
 
