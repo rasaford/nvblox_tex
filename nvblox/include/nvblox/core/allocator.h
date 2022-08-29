@@ -28,7 +28,7 @@ class HostAllocator {
     // https://developer.nvidia.com/blog/improving-gpu-memory-oversubscription-performance/
     checkCudaErrors(cudaMallocManaged(&ptr, size, cudaMemAttachGlobal));
     checkCudaErrors(cudaMemPrefetchAsync(ptr, size, cudaCpuDeviceId, stream));
-    // checkCudaErrors(cudaMemsetAsync(ptr, 0, size, stream));
+    checkCudaErrors(cudaMemsetAsync(ptr, 0, size, stream));
     checkCudaErrors(cudaMemAdvise(ptr, size, cudaMemAdviseSetPreferredLocation,
                                   cudaCpuDeviceId));
     // NOTE(rasaford): Create a mapping for the memory on the device, such that
@@ -55,7 +55,7 @@ class DeviceAllocator {
     // swapped out to Host memory.
     checkCudaErrors(cudaMallocManaged(&ptr, size, cudaMemAttachGlobal));
     checkCudaErrors(cudaMemPrefetchAsync(ptr, size, device, stream));
-    // checkCudaErrors(cudaMemsetAsync(ptr, 0, size, stream));
+    checkCudaErrors(cudaMemsetAsync(ptr, 0, size, stream));
     checkCudaErrors(
         cudaMemAdvise(ptr, size, cudaMemAdviseSetPreferredLocation, device));
     return ptr;
