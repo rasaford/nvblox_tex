@@ -130,7 +130,6 @@ class ObjectPool {
         base_block = allocate_block();
       }
       address = block_memory_ + base_block->count;
-      base_block->count++;
     }
 
     if (address < base_block->memory ||
@@ -139,6 +138,7 @@ class ObjectPool {
     }
 
     // store the allocated ptr for referencing in dealloc
+    base_block->count++;
     allocated_[address] = base_block;
     return address;
   }
@@ -169,9 +169,14 @@ class ObjectPool {
           "dealloc: FreeBlock* is not in block memory range");
     }
 
-    new_free_block->next_free = reinterpret_cast<void*>(first_deleted_);
-    new_free_block->base_block = reinterpret_cast<void*>(base_block);
+    new_free_block->next_free = first_deleted_;
+    new_free_block->base_block = base_block;
     base_block->count--;
+    if (base_block->count < 0) {
+      std::runtime_error("invalid count");
+    } else if (base_block->count == 0) {
+      std::cout << "empty block " << new_free_block << std::endl;
+    }
     first_deleted_ = new_free_block;
 
     allocated_.erase(pointer);
@@ -179,6 +184,34 @@ class ObjectPool {
 
   bool isAllocated(BlockType* pointer) const {
     return allocated_.find(pointer) != allocated_.end();
+  }
+
+  void printUsage() {
+    int min = INT_MAX;
+    int max = INT_MIN;
+    int sum = 0;
+    int num_blocks = 0;
+    int total_count = 0;
+    int total_cap = 0;
+    MemoryBlock* start = &first_block_;
+    while (start != nullptr) {
+      min = std::min(min, start->count);
+      max = std::max(max, start->count);
+      sum += start->count;
+      total_count += start->count;
+      total_cap += start->capacity;
+      num_blocks++;
+      start = start->next_block;
+    }
+    std::cout << "Blocks Usage: " << total_count << " / " << total_cap << " "
+              << 100.f * (float)total_count / total_cap << "% "
+              << "Mean per Block: " << (double)sum / num_blocks << " [" << min
+              << ", " << max << "] "
+              << "num_blocks: " << num_blocks << std::endl;
+    std::cout << "Memory Usage: "
+              << total_count * sizeof(BlockType) / (1024 * 1024) << " / "
+              << total_cap * sizeof(BlockType) / (1024 * 1024) << " MiB"
+              << std::endl;
   }
 
  private:
@@ -189,7 +222,7 @@ class ObjectPool {
     FreeBlock* free_ptrs;
 
     int count;
-    size_t capacity;
+    const size_t capacity;
 
     MemoryBlock* next_block;
 
@@ -293,6 +326,13 @@ class Allocator {
     }
     to_host_timer.Stop();
     return unified_ptr<BlockType>(host_ptr, MemoryType::kPool);
+  }
+
+  void printUsage() {
+    std::cout << typeid(BlockType).name() << " DevicePool" << std::endl;
+    device_pool->printUsage();
+    std::cout << typeid(BlockType).name() << " HostPool" << std::endl;
+    host_pool->printUsage();
   }
 
  protected:

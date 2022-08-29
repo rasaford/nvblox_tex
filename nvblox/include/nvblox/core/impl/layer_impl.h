@@ -117,6 +117,7 @@ void BlockLayer<BlockType>::prefetchBlocks(
     blocks_.emplace(idx_copy, allocator_.toDevice(known_ptr));
     device_blocks_.insert(idx_copy);
   }
+  allocator_.printUsage();
 }
 
 // Block accessors by position.
