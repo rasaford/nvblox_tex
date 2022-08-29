@@ -84,7 +84,7 @@ void BlockLayer<BlockType>::evictOldBlocks(
     Index3D block_idx = *it;
     timing::Timer find_timer("prefetch/evict/find");
     bool is_old = std::find(block_indices.begin(), block_indices.end(),
-                            block_idx) != block_indices.end();
+                            block_idx) == block_indices.end();
     find_timer.Stop();
     // evict the block if it's not in the vector of new block_indices
     if (is_old) {
@@ -98,7 +98,9 @@ void BlockLayer<BlockType>::evictOldBlocks(
     }
     it++;
   }
-  std::cout << "evicted " << evicts << std::endl;
+  // std::cout << "evicted " << evicts << " num device blocks "
+  //           << device_blocks_.size() << std::endl;
+  // allocator_.printUsage();
 }
 
 template <typename BlockType>
@@ -117,7 +119,9 @@ void BlockLayer<BlockType>::prefetchBlocks(
     blocks_.emplace(idx_copy, allocator_.toDevice(known_ptr));
     device_blocks_.insert(idx_copy);
   }
-  allocator_.printUsage();
+  // std::cout << "prefetched " << block_indices.size() << " num device blocks "
+  //           << device_blocks_.size() << std::endl;
+  // allocator_.printUsage();
 }
 
 // Block accessors by position.

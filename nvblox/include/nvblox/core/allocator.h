@@ -183,10 +183,11 @@ class ObjectPool {
   }
 
   bool isAllocated(BlockType* pointer) const {
-    return allocated_.find(pointer) != allocated_.end();
+    return (pointer != nullptr) &&
+           (allocated_.find(pointer) != allocated_.end());
   }
 
-  void printUsage() {
+  void printUsage() const {
     int min = INT_MAX;
     int max = INT_MIN;
     int sum = 0;
@@ -294,34 +295,40 @@ class Allocator {
 
   ~Allocator() { cudaStreamDestroy(stream); }
 
-  typename BlockType::Ptr toDevice(typename BlockType::Ptr host_block) {
+  typename BlockType::Ptr toDevice(typename BlockType::Ptr block) {
     timing::Timer to_device_timer("prefetch/prefetch/to_device");
-    BlockType* device_ptr = device_pool->alloc();
-    BlockType* host_ptr = host_block.get();
+    BlockType* ptr = block.get();
+    if (device_pool->isAllocated(ptr)) {
+      return block;
+    }
 
-    if (host_ptr != nullptr && host_pool->isAllocated(host_ptr)) {
+    BlockType* device_ptr = device_pool->alloc();
+    if (ptr != nullptr && host_pool->isAllocated(ptr)) {
       timing::Timer to_device_dealloc("prefetch/prefetch/dealloc");
-      cudaMemcpyAsync(device_ptr, host_ptr, sizeof(BlockType),
-                      cudaMemcpyDefault, stream);
-      host_pool->dealloc(host_ptr);
+      cudaMemcpyAsync(device_ptr, ptr, sizeof(BlockType), cudaMemcpyDefault,
+                      stream);
+      host_pool->dealloc(ptr);
       to_device_dealloc.Stop();
     }
     to_device_timer.Stop();
     return unified_ptr<BlockType>(device_ptr, MemoryType::kPool);
   }
 
-  typename BlockType::Ptr toHost(typename BlockType::Ptr device_block) {
+  typename BlockType::Ptr toHost(typename BlockType::Ptr block) {
     timing::Timer to_host_timer("prefetch/evict/to_host");
-    BlockType* host_ptr = host_pool->alloc();
-    BlockType* device_ptr = device_block.get();
+    BlockType* ptr = block.get();
+    if (host_pool->isAllocated(ptr)) {
+      return block;
+    }
 
-    if (device_ptr != nullptr && device_pool->isAllocated(device_ptr)) {
+    BlockType* host_ptr = host_pool->alloc();
+    if (ptr != nullptr && device_pool->isAllocated(ptr)) {
       timing::Timer to_host_memcpy("prefetch/evict/memcpy");
-      cudaMemcpyAsync(host_ptr, device_ptr, sizeof(BlockType),
-                      cudaMemcpyDefault, stream);
+      cudaMemcpyAsync(host_ptr, ptr, sizeof(BlockType), cudaMemcpyDefault,
+                      stream);
       to_host_memcpy.Stop();
       timing::Timer to_host_dealloc("prefetch/evict/dealloc");
-      device_pool->dealloc(device_ptr);
+      device_pool->dealloc(ptr);
       to_host_dealloc.Stop();
     }
     to_host_timer.Stop();
