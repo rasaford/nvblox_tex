@@ -59,16 +59,7 @@ class BlockLayer : public BaseLayer {
   BlockLayer(float block_size, MemoryType memory_type)
       : block_size_(block_size),
         memory_type_(memory_type),
-        gpu_layer_view_up_to_date_(false) {
-    // get the currently active device
-    cudaGetDevice(&device_);
-    // create the prefetching stream
-    cudaStreamCreate(&prefetch_stream_);
-  };
-  virtual ~BlockLayer() {
-    // clean up the prefetching stream
-    cudaStreamDestroy(prefetch_stream_);
-  };
+        gpu_layer_view_up_to_date_(false){};
 
   // (Deep) Copy disabled
   // NOTE(alexmillane): We could write these if needed in the future
@@ -94,11 +85,7 @@ class BlockLayer : public BaseLayer {
 
   // Blocks the current thread until all previously queued prefetching
   // operations are completed.
-  void waitForPrefetch() {
-    if (prefetch_stream_ != nullptr) {
-      checkCudaErrors(cudaStreamSynchronize(prefetch_stream_));
-    }
-  };
+  void waitForPrefetch() { allocator_.waitForAllocations(); };
 
   // Block accessors by position.
   typename BlockType::Ptr getBlockAtPosition(const Vector3f& position);
@@ -146,13 +133,9 @@ class BlockLayer : public BaseLayer {
   mutable bool gpu_layer_view_up_to_date_;
   mutable std::unique_ptr<GPULayerViewType> gpu_layer_view_;
 
-  // CUDA stream we use for prefetching block data
-  cudaStream_t prefetch_stream_ = nullptr;
-  // ID of the target device to use as the prefetching target
-  int device_ = -1;
-  // Set of all blocks which will eventually be on the device (as soon as
-  // prefetch_stream has completed all operations)
+  // Set of all blocks which will eventually be on the device
   Index3DSet device_blocks_;
+  // Allocator actually managing host and device memory
   alloc::Allocator<BlockType> allocator_;
 };
 

@@ -37,10 +37,7 @@ class HostAllocator {
         cudaMemAdvise(ptr, size, cudaMemAdviseSetAccessedBy, device));
     return ptr;
   }
-  static inline void deallocate(T* ptr) {
-    // Strip any possible const from the given type
-    checkCudaErrors(cudaFree(ptr));
-  }
+  static inline void deallocate(T* ptr) { checkCudaErrors(cudaFree(ptr)); }
 };
 
 template <typename T>
@@ -60,10 +57,7 @@ class DeviceAllocator {
         cudaMemAdvise(ptr, size, cudaMemAdviseSetPreferredLocation, device));
     return ptr;
   }
-  static inline void deallocate(T* ptr) {
-    // Strip any possible const from the given type
-    checkCudaErrors(cudaFree(ptr));
-  }
+  static inline void deallocate(T* ptr) { checkCudaErrors(cudaFree(ptr)); }
 };
 
 struct FreeBlock {
@@ -77,9 +71,40 @@ struct FreeBlock {
 };
 
 // Memory allocator for Device and host memory
-// TODO: this pool will never free up memory, unless it is destroyed
+// NOTE(rasaford): This pool will never free up memory, unless it is destroyed
 template <typename BlockType, class Allocator>
 class ObjectPool {
+ private:
+  struct MemoryBlock {
+    // Memory managed by this Block
+    BlockType* memory;
+    // Array of FreeBlock for each BlockType objects that could be allocated
+    FreeBlock* free_ptrs;
+
+    int count;
+    const size_t capacity;
+
+    MemoryBlock* next_block;
+
+    MemoryBlock(size_t capacity, int device, const cudaStream_t& stream)
+        : count(0), capacity(capacity), next_block(nullptr) {
+      if (capacity < 1) {
+        throw std::invalid_argument("capacity has to be greater than 1");
+      }
+      memory =
+          Allocator::allocate(sizeof(BlockType) * capacity, device, stream);
+      if (memory == nullptr) {
+        throw std::bad_alloc();
+      }
+      free_ptrs = new FreeBlock[capacity];
+    }
+
+    ~MemoryBlock() {
+      Allocator::deallocate(memory);
+      delete[] free_ptrs;
+    }
+  };
+
  public:
   ObjectPool(int device, cudaStream_t stream, int initial_capacity = 1 << 9,
              size_t max_block_length = 1 << 12)
@@ -110,6 +135,7 @@ class ObjectPool {
     MemoryBlock* base_block = last_block_;
 
     if (first_deleted_ != nullptr) {
+      // reuse a previously freed block
       base_block = reinterpret_cast<MemoryBlock*>(first_deleted_->base_block);
       FreeBlock* free_ptrs_block =
           reinterpret_cast<FreeBlock*>(base_block->free_ptrs);
@@ -122,10 +148,12 @@ class ObjectPool {
       }
 
       address = base_block->memory + block_idx;
+      cudaMemsetAsync(address, 0, sizeof(BlockType), stream);
       FreeBlock* tmp = first_deleted_;
       first_deleted_ = next_free_block;
       tmp->reset();
     } else {
+      // allocate a new block
       if (base_block->count >= base_block->capacity) {
         base_block = allocate_block();
       }
@@ -150,7 +178,7 @@ class ObjectPool {
     // NOTE(rasaford): Check that this BlockType* has been allocated. Throw to
     // prevent double free.
     if (it == allocated_.end()) {
-      throw std::runtime_error("ptr has not been allocated");
+      throw std::runtime_error("dealloc: ptr has not been allocated");
     }
 
     // update the free block of *ptr to reflect the deallocated state
@@ -194,7 +222,8 @@ class ObjectPool {
     int num_blocks = 0;
     int total_count = 0;
     int total_cap = 0;
-    MemoryBlock* start = &first_block_;
+    // TODO(rasaford): For some reason we need a const_cast here --> investigate
+    MemoryBlock* start = const_cast<MemoryBlock*>(&first_block_);
     while (start != nullptr) {
       min = std::min(min, start->count);
       max = std::max(max, start->count);
@@ -214,37 +243,6 @@ class ObjectPool {
               << total_cap * sizeof(BlockType) / (1024 * 1024) << " MiB"
               << std::endl;
   }
-
- private:
-  struct MemoryBlock {
-    // Memory managed by this Block
-    BlockType* memory;
-    // Array of FreeBlock for each BlockType objects that could be allocated
-    FreeBlock* free_ptrs;
-
-    int count;
-    const size_t capacity;
-
-    MemoryBlock* next_block;
-
-    MemoryBlock(size_t capacity, int device, const cudaStream_t& stream)
-        : count(0), capacity(capacity), next_block(nullptr) {
-      if (capacity < 1) {
-        throw std::invalid_argument("capacity has to be greater than 1");
-      }
-      memory =
-          Allocator::allocate(sizeof(BlockType) * capacity, device, stream);
-      if (memory == nullptr) {
-        throw std::bad_alloc();
-      }
-      free_ptrs = new FreeBlock[capacity];
-    }
-
-    ~MemoryBlock() {
-      Allocator::deallocate(memory);
-      delete[] free_ptrs;
-    }
-  };
 
  protected:
   MemoryBlock* allocate_block() {
@@ -288,12 +286,16 @@ class Allocator {
 
   Allocator() {
     cudaGetDevice(&device);
-    cudaStreamCreate(&stream);
-    host_pool = std::make_unique<HostPool>(device, stream);
-    device_pool = std::make_unique<DevicePool>(device, stream);
+    cudaStreamCreate(&host_stream);
+    cudaStreamCreate(&device_stream);
+    host_pool = std::make_unique<HostPool>(device, host_stream);
+    device_pool = std::make_unique<DevicePool>(device, device_stream);
   };
 
-  ~Allocator() { cudaStreamDestroy(stream); }
+  ~Allocator() {
+    cudaStreamDestroy(host_stream);
+    cudaStreamDestroy(device_stream);
+  }
 
   typename BlockType::Ptr toDevice(typename BlockType::Ptr block) {
     timing::Timer to_device_timer("prefetch/prefetch/to_device");
@@ -304,11 +306,9 @@ class Allocator {
 
     BlockType* device_ptr = device_pool->alloc();
     if (ptr != nullptr && host_pool->isAllocated(ptr)) {
-      timing::Timer to_device_dealloc("prefetch/prefetch/dealloc");
       cudaMemcpyAsync(device_ptr, ptr, sizeof(BlockType), cudaMemcpyDefault,
-                      stream);
+                      device_stream);
       host_pool->dealloc(ptr);
-      to_device_dealloc.Stop();
     }
     to_device_timer.Stop();
     return unified_ptr<BlockType>(device_ptr, MemoryType::kPool);
@@ -323,13 +323,9 @@ class Allocator {
 
     BlockType* host_ptr = host_pool->alloc();
     if (ptr != nullptr && device_pool->isAllocated(ptr)) {
-      timing::Timer to_host_memcpy("prefetch/evict/memcpy");
       cudaMemcpyAsync(host_ptr, ptr, sizeof(BlockType), cudaMemcpyDefault,
-                      stream);
-      to_host_memcpy.Stop();
-      timing::Timer to_host_dealloc("prefetch/evict/dealloc");
+                      host_stream);
       device_pool->dealloc(ptr);
-      to_host_dealloc.Stop();
     }
     to_host_timer.Stop();
     return unified_ptr<BlockType>(host_ptr, MemoryType::kPool);
@@ -342,11 +338,16 @@ class Allocator {
     host_pool->printUsage();
   }
 
+  void waitForAllocations() {
+    checkCudaErrors(cudaStreamSynchronize(host_stream));
+    checkCudaErrors(cudaStreamSynchronize(device_stream));
+  }
+
  protected:
   std::unique_ptr<HostPool> host_pool;
   std::unique_ptr<DevicePool> device_pool;
 
-  cudaStream_t stream;
+  cudaStream_t host_stream, device_stream;
   int device;
 };
 

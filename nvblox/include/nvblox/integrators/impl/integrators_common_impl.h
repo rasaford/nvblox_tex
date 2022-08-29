@@ -50,20 +50,13 @@ __host__ std::vector<const BlockType*> getBlockPtrsFromIndices(
 template <typename VoxelType>
 void allocateBlocksWhereRequired(const std::vector<Index3D>& block_indices,
                                  BlockLayer<VoxelBlock<VoxelType>>* layer) {
-  std::cout << "evicting " <<  std::endl;
   timing::Timer evict_timer("prefetch/evict");
   layer->evictOldBlocks(block_indices);
   evict_timer.Stop();
 
-  std::cout << "prefetching " << block_indices.size() << " blocks."
-            << std::endl;
   timing::Timer prefetch_timer("prefetch/prefetch");
   layer->prefetchBlocks(block_indices);
   prefetch_timer.Stop();
-
-  // for (const Index3D& block_index : block_indices) {
-  //   layer->allocateBlockAtIndex(block_index);
-  // }
 }
 
 }  // namespace nvblox

@@ -23,14 +23,6 @@ limitations under the License.
 #include "nvblox/core/types.h"
 #include "nvblox/utils/timing.h"
 
-// Pads the given size to the page size (size has to be a power of 2)
-#define ALIGN_SIZE(addr, size) \
-  (reinterpret_cast<size_t>(addr) + size - 1) & ~(size - 1)
-// round addr down to page size
-#define ALIGN_PAGE(addr, size) reinterpret_cast<size_t>(addr) & ~(size - 1)
-#define PAGE_IDX(addr) reinterpret_cast<size_t>(addr) >> 12
-#define PAGE_SIZE 4 * 1024
-
 namespace nvblox {
 
 // Block accessors by index.
@@ -77,38 +69,36 @@ typename BlockType::Ptr BlockLayer<BlockType>::allocateBlockAtIndex(
 template <typename BlockType>
 void BlockLayer<BlockType>::evictOldBlocks(
     const std::vector<Index3D>& block_indices) {
-  // TODO(rasaford) this is O(n^2) improve this using hashing or sorting
-
+  std::vector<Index3D> to_delete;
   int evicts = 0;
-  for (auto it = device_blocks_.begin(); it != device_blocks_.end();) {
-    Index3D block_idx = *it;
+  // TODO(rasaford) this is O(n^2) improve this using hashing or sorting
+  for (const Index3D& block_idx : device_blocks_) {
     timing::Timer find_timer("prefetch/evict/find");
     bool is_old = std::find(block_indices.begin(), block_indices.end(),
                             block_idx) == block_indices.end();
     find_timer.Stop();
     // evict the block if it's not in the vector of new block_indices
-    if (is_old) {
-      auto iit = blocks_.find(block_idx);
-      if (iit != blocks_.end()) {
-        evicts++;
-        it = device_blocks_.erase(it);
-        blocks_.emplace(block_idx, allocator_.toHost(iit->second));
-        continue;
-      }
+    if (!is_old) {
+      continue;
     }
-    it++;
+    auto iit = blocks_.find(block_idx);
+    if (iit == blocks_.end()) {
+      continue;
+    }
+    evicts++;
+    to_delete.push_back(block_idx);
+    blocks_[block_idx] = allocator_.toHost(iit->second);
   }
-  // std::cout << "evicted " << evicts << " num device blocks "
-  //           << device_blocks_.size() << std::endl;
-  // allocator_.printUsage();
+  for (const Index3D& idx : to_delete) {
+    device_blocks_.erase(idx);
+  }
 }
 
 template <typename BlockType>
 void BlockLayer<BlockType>::prefetchBlocks(
     const std::vector<Index3D>& block_indices) {
-  for (int i = 0; i < block_indices.size(); i++) {
-    Index3D idx_copy = block_indices[i];
-    auto it = blocks_.find(idx_copy);
+  for (const Index3D& idx : block_indices) {
+    auto it = blocks_.find(idx);
     typename BlockType::Ptr known_ptr;
     if (it != blocks_.end()) {
       known_ptr = it->second;
@@ -116,12 +106,13 @@ void BlockLayer<BlockType>::prefetchBlocks(
       // The block has not been allocated --> invalidate the GPU Hash view
       gpu_layer_view_up_to_date_ = false;
     }
-    blocks_.emplace(idx_copy, allocator_.toDevice(known_ptr));
-    device_blocks_.insert(idx_copy);
+    blocks_[idx] = allocator_.toDevice(known_ptr);
+    device_blocks_.emplace(idx);
   }
-  // std::cout << "prefetched " << block_indices.size() << " num device blocks "
-  //           << device_blocks_.size() << std::endl;
-  // allocator_.printUsage();
+  std::cout << "prefetched " << block_indices.size() << " num device blocks "
+            << device_blocks_.size() << " total blocks " << blocks_.size()
+            << std::endl;
+  allocator_.printUsage();
 }
 
 // Block accessors by position.
