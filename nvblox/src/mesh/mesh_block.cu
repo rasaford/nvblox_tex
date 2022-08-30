@@ -83,13 +83,13 @@ void MeshBlock::expandIntensitiesToMatchVertices() {
 MeshBlockUV::MeshBlockUV(MemoryType memory_type)
     : MeshBlock(memory_type),
       uvs(memory_type),
-      patches(memory_type),
+      // patches(memory_type),
       vertex_patches(memory_type) {}
 
 void MeshBlockUV::clear() {
   MeshBlock::clear();
   uvs.clear();
-  patches.clear();
+  // patches.clear();
   vertex_patches.clear();
   known_patch_indices.clear();
 }
@@ -108,8 +108,8 @@ std::vector<Vector2f> MeshBlockUV::getUVVectorOnCPU() const {
   return uvs.toVector();
 }
 
-std::vector<Color*> MeshBlockUV::getPatchVectorOnCPU() const {
-  return patches.toVector();
+std::vector<Index6D> MeshBlockUV::getPatchVectorOnCPU() const {
+  return known_patch_indices.toVector();
 }
 
 std::vector<int> MeshBlockUV::getVertexPatchVectorOnCPU() const {
@@ -128,11 +128,9 @@ std::vector<int> MeshBlockUV::getVertexPatchVectorOnCPU() const {
  * @return int index of the patch in the patches vector
  */
 int MeshBlockUV::addPatch(const Index3D& block_index,
-                          const Index3D& voxel_index, const int rows,
-                          const int cols, Color* patch) {
+                          const Index3D& voxel_index) {
   // TODO(rasaford) because of the usage of std::find this function can
   // currently not be exectued on the GPU. --> Fix
-  int patch_index = patches.size();
   // clang-format off
   const Index6D combined_index = Index6D( block_index(0), 
                                           block_index(1), 
@@ -144,11 +142,11 @@ int MeshBlockUV::addPatch(const Index3D& block_index,
   auto it = std::find(known_patch_indices.begin(), known_patch_indices.end(),
                       combined_index);
 
+  int patch_index = known_patch_indices.size();
   if (it != known_patch_indices.end()) {
     patch_index = std::distance(known_patch_indices.begin(), it);
   } else {
     known_patch_indices.push_back(combined_index);
-    patches.push_back(patch);
   }
   return patch_index;
 }

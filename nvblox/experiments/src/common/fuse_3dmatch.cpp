@@ -356,7 +356,7 @@ bool TexFuse3DMatch::outputMeshPly() const {
 
   {
     timing::Timer timer_tex_pack("tex3dmatch/mesh/tex_pack");
-    textured_mesh = io::packTextures(mapper_.mesh_layer());
+    textured_mesh = io::packTextures(mapper_.mesh_layer(), mapper_.tex_layer());
   }
   {
     timing::Timer timer_write("tex3dmatch/mesh/write");
