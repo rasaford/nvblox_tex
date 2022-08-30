@@ -29,7 +29,7 @@ struct TexturedMesh {
  * @param padding padding around each texture patch, defined in pixels
  * @return std::unique_ptr<TexturedMesh>
  */
-std::unique_ptr<TexturedMesh> packTextures(const MeshUVLayer& mesh_layer,
+std::unique_ptr<TexturedMesh> packTextures(const MeshUVLayer& mesh_layer, const TexLayer& tex_layer,
                                            const int padding = 1);
 
 /**
@@ -42,7 +42,7 @@ std::unique_ptr<TexturedMesh> packTextures(const MeshUVLayer& mesh_layer,
  * @return std::unique_ptr<TexturedMesh>
  */
 std::unique_ptr<TexturedMesh> packTextures(
-    const MeshUVLayer& mesh_layer, const std::vector<Index3D> block_indices,
+    const MeshUVLayer& mesh_layer, const TexLayer& tex_layer, const std::vector<Index3D>& block_indices,
     const int padding = 1);
 
 }  // namespace io

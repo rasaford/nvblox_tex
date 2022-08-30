@@ -90,15 +90,14 @@ struct MeshBlockUV : public MeshBlock {
   // coordianates
   unified_vector<Vector2f> uvs;
   // Each TexVoxel that is meshed contains a fixed size texture patch
-  unified_vector<Color*> patches;
+  // unified_vector<std::pair<Index3D, Index3D>> patches;
   // Each vertex is assigned an index into the patches vector, defining which
   // patch it's uv coordinates belong to
   unified_vector<int> vertex_patches;
 
   MeshBlockUV(MemoryType memory_type = MemoryType::kDevice);
 
-  int addPatch(const Index3D& block_index, const Index3D& voxel_index,
-               const int rows, const int cols, Color* patch);
+  int addPatch(const Index3D& block_index, const Index3D& voxel_index);
 
   void clear();
 
@@ -108,7 +107,7 @@ struct MeshBlockUV : public MeshBlock {
 
   // Copy mesh data to the CPU.
   std::vector<Vector2f> getUVVectorOnCPU() const;
-  std::vector<Color*> getPatchVectorOnCPU() const;
+  std::vector<Index6D> getPatchVectorOnCPU() const;
   std::vector<int> getVertexPatchVectorOnCPU() const;
 
   static Ptr allocate(MemoryType memory_type);
