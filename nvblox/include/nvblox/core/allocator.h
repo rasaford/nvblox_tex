@@ -4,6 +4,7 @@
 
 #include <memory.h>
 #include <algorithm>
+#include <iomanip>
 #include <unordered_map>
 #include <vector>
 #include "nvblox/core/blox.h"
@@ -233,12 +234,14 @@ class ObjectPool {
       num_blocks++;
       start = start->next_block;
     }
-    std::cout << "Blocks Usage: " << total_count << " / " << total_cap << " "
+    std::cout << "Blocks Usage: " << std::setw(6) << total_count << " / "
+              << std::setw(6) << total_cap << " "
               << 100.f * (float)total_count / total_cap << "%"
-              << " Num Blocks: " << num_blocks << " Memory Usage: "
+              << " Num Blocks: " << std::setw(3) << num_blocks
+              << " Memory Usage: " << std::setw(5)
               << total_count * sizeof(BlockType) / (1024 * 1024) << " / "
-              << total_cap * sizeof(BlockType) / (1024 * 1024) << " MiB"
-              << std::endl;
+              << std::setw(5) << total_cap * sizeof(BlockType) / (1024 * 1024)
+              << " MiB" << std::endl;
   }
 
  protected:
