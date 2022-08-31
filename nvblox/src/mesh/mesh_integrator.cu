@@ -111,6 +111,7 @@ __global__ void isBlockMeshableKernel(int num_blocks,
     const TsdfVoxel& voxel =
         blocks[block_index]
             ->voxels[voxel_index.z][voxel_index.y][voxel_index.x];
+    // TODO(rasaford): this looks like a data race condition here
     if (fabs(voxel.distance) <= cutoff_distance && voxel.weight >= min_weight) {
       meshable[block_index] = true;
     }

@@ -176,16 +176,17 @@ class MeshUVIntegrator : public Mesher<CudaMeshBlockUV, MeshBlockUV> {
                       const std::vector<Index3D>& block_indices,
                       MeshUVLayer* mesh_layer);
 
- private:
-  bool projectToUV(const Vector3f& vertex, const Vector3f& voxel_center,
-                         const float voxel_size, const TexVoxel::Dir direction,
-                         Vector2f* uv) const;
-  Color getDirColor(const TexVoxel::Dir dir,
-                    const float positive_weight = 0.5f) const;
-
  protected:
   // The color that the mesh takes if no coloring is available.
   const Color default_mesh_color_ = Color::Gray();
+
+  device_vector<Index3D> block_indices_device_;
+
+  host_vector<const TexBlock*> tex_blocks_host_;
+  device_vector<const TexBlock*> tex_blocks_device_;
+
+  host_vector<CudaMeshBlockUV> uv_mesh_blocks_host_;
+  device_vector<CudaMeshBlockUV> uv_mesh_blocks_device_;
 };
 
 }  // namespace nvblox

@@ -66,6 +66,10 @@ std::vector<Color> MeshBlock::getColorVectorOnCPU() const {
   return colors.toVector();
 }
 
+std::vector<Index3D> MeshBlock::getVoxelsVectorOnCPU() const {
+  return voxels.toVector();
+}
+
 size_t MeshBlock::size() const { return vertices.size(); }
 
 size_t MeshBlock::capacity() const { return vertices.capacity(); }
@@ -81,16 +85,12 @@ void MeshBlock::expandIntensitiesToMatchVertices() {
 }
 
 MeshBlockUV::MeshBlockUV(MemoryType memory_type)
-    : MeshBlock(memory_type),
-      uvs(memory_type),
-      // patches(memory_type),
-      vertex_patches(memory_type) {}
+    : MeshBlock(memory_type), uvs(memory_type) {}
 
 void MeshBlockUV::clear() {
   MeshBlock::clear();
   uvs.clear();
   // patches.clear();
-  vertex_patches.clear();
   known_patch_indices.clear();
 }
 
@@ -99,56 +99,12 @@ void MeshBlockUV::expandUVsToMatchVertices() {
   uvs.resize(vertices.size());
 }
 
-void MeshBlockUV::expandVertexPatchesToMatchVertices() {
-  vertex_patches.reserve(vertices.capacity());
-  vertex_patches.resize(vertices.size());
-}
-
 std::vector<Vector2f> MeshBlockUV::getUVVectorOnCPU() const {
   return uvs.toVector();
 }
 
 std::vector<Index6D> MeshBlockUV::getPatchVectorOnCPU() const {
   return known_patch_indices.toVector();
-}
-
-std::vector<int> MeshBlockUV::getVertexPatchVectorOnCPU() const {
-  return vertex_patches.toVector();
-}
-
-/**
- * @brief Adds a patch belonging to the index at (block_index, voxel_index) to
- * the vector of known patches if the corresponding index pair is new and
- * returns the patches' index. Otherwise no new patch is added and the index of
- * the known patch is returned.
- *
- * @param block_index
- * @param voxel_index
- * @param patch
- * @return int index of the patch in the patches vector
- */
-int MeshBlockUV::addPatch(const Index3D& block_index,
-                          const Index3D& voxel_index) {
-  // TODO(rasaford) because of the usage of std::find this function can
-  // currently not be exectued on the GPU. --> Fix
-  // clang-format off
-  const Index6D combined_index = Index6D( block_index(0), 
-                                          block_index(1), 
-                                          block_index(2), 
-                                          voxel_index(0),
-                                          voxel_index(1), 
-                                          voxel_index(2));
-  // clang-format on
-  auto it = std::find(known_patch_indices.begin(), known_patch_indices.end(),
-                      combined_index);
-
-  int patch_index = known_patch_indices.size();
-  if (it != known_patch_indices.end()) {
-    patch_index = std::distance(known_patch_indices.begin(), it);
-  } else {
-    known_patch_indices.push_back(combined_index);
-  }
-  return patch_index;
 }
 
 MeshBlockUV::Ptr MeshBlockUV::allocate(MemoryType memory_type) {
@@ -167,7 +123,7 @@ CudaMeshBlock::CudaMeshBlock(MeshBlock* block) {
 }
 
 CudaMeshBlockUV::CudaMeshBlockUV(MeshBlockUV* block) : CudaMeshBlock(block) {
-  uvs_ = block->uvs.data();
+  uvs = block->uvs.data();
 }
 
 }  // namespace nvblox
