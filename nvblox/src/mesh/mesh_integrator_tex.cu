@@ -141,6 +141,8 @@ void MeshUVIntegrator::textureMeshGPU(
   CHECK_NOTNULL(mesh_layer);
   CHECK_EQ(tex_layer.block_size(), mesh_layer->block_size());
 
+  timing::Timer("mesh/gpu/texture");
+
   // NOTE(alexmillane): Generally, some of the MeshBlocks which we are
   // "coloring" will not have data in the color layer. HOWEVER, for colored
   // MeshBlocks (ie with non-empty color members), the size of the colors must
@@ -222,6 +224,7 @@ void MeshUVIntegrator::textureMeshCPU(const TexLayer& tex_layer,
 void MeshUVIntegrator::textureMeshCPU(const TexLayer& tex_layer,
                                       const std::vector<Index3D>& block_indices,
                                       MeshUVLayer* mesh_layer) {
+  timing::Timer("mesh/cpu/texture");
   // For each vertex just grab the closest color
   for (const Index3D& block_idx : block_indices) {
     MeshBlockUV::Ptr block = mesh_layer->getBlockAtIndex(block_idx);
