@@ -69,16 +69,19 @@ typename BlockType::Ptr BlockLayer<BlockType>::allocateBlockAtIndex(
 template <typename BlockType>
 void BlockLayer<BlockType>::evictOldBlocks(
     const std::vector<Index3D>& block_indices) {
+  // boundaries of an AxisAlignedBoundingBox of the given indices
+  Index3D min(INT_MAX, INT_MAX, INT_MAX), max(INT_MIN, INT_MIN, INT_MIN);
+  for (const Index3D& block_idx : block_indices) {
+    min = min.cwiseMin(block_idx);
+    max = max.cwiseMax(block_idx);
+  }
+
   std::vector<Index3D> to_delete;
   int evicts = 0;
-  // TODO(rasaford) this is O(n^2) improve this using hashing or sorting
   for (const Index3D& block_idx : device_blocks_) {
-    timing::Timer find_timer("prefetch/evict/find");
-    bool is_old = std::find(block_indices.begin(), block_indices.end(),
-                            block_idx) == block_indices.end();
-    find_timer.Stop();
-    // evict the block if it's not in the vector of new block_indices
-    if (!is_old) {
+    // evict the current index is not in the AABB
+    if ((min.array() <= block_idx.array()).all() &&
+        (block_idx.array() <= max.array()).all()) {
       continue;
     }
     auto iit = blocks_.find(block_idx);
@@ -86,8 +89,8 @@ void BlockLayer<BlockType>::evictOldBlocks(
       continue;
     }
     evicts++;
-    to_delete.push_back(block_idx);
     blocks_[block_idx] = allocator_.toHost(iit->second);
+    to_delete.push_back(block_idx);
   }
   for (const Index3D& idx : to_delete) {
     device_blocks_.erase(idx);

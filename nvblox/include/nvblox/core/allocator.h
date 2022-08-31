@@ -234,11 +234,8 @@ class ObjectPool {
       start = start->next_block;
     }
     std::cout << "Blocks Usage: " << total_count << " / " << total_cap << " "
-              << 100.f * (float)total_count / total_cap << "% "
-              << "Mean per Block: " << (double)sum / num_blocks << " [" << min
-              << ", " << max << "] "
-              << "num_blocks: " << num_blocks << std::endl;
-    std::cout << "Memory Usage: "
+              << 100.f * (float)total_count / total_cap << "%"
+              << " Num Blocks: " << num_blocks << " Memory Usage: "
               << total_count * sizeof(BlockType) / (1024 * 1024) << " / "
               << total_cap * sizeof(BlockType) / (1024 * 1024) << " MiB"
               << std::endl;
@@ -332,9 +329,9 @@ class Allocator {
   }
 
   void printUsage() {
-    std::cout << typeid(BlockType).name() << " DevicePool" << std::endl;
+    std::cout << typeid(BlockType).name() << " DevicePool ";
     device_pool->printUsage();
-    std::cout << typeid(BlockType).name() << " HostPool" << std::endl;
+    std::cout << typeid(BlockType).name() << " HostPool   ";
     host_pool->printUsage();
   }
 
