@@ -16,10 +16,12 @@ limitations under the License.
 #pragma once
 
 #include <glog/logging.h>
+#include <algorithm>
 
 #include "nvblox/core/accessors.h"
 #include "nvblox/core/indexing.h"
 #include "nvblox/core/types.h"
+#include "nvblox/utils/timing.h"
 
 namespace nvblox {
 
@@ -62,6 +64,58 @@ typename BlockType::Ptr BlockLayer<BlockType>::allocateBlockAtIndex(
         blocks_.emplace(index, BlockType::allocate(memory_type_));
     return insert_status.first->second;
   }
+}
+
+template <typename BlockType>
+void BlockLayer<BlockType>::evictOldBlocks(
+    const std::vector<Index3D>& block_indices) {
+  // boundaries of an AxisAlignedBoundingBox of the given indices
+  Index3D min(INT_MAX, INT_MAX, INT_MAX), max(INT_MIN, INT_MIN, INT_MIN);
+  for (const Index3D& block_idx : block_indices) {
+    min = min.cwiseMin(block_idx);
+    max = max.cwiseMax(block_idx);
+  }
+
+  std::vector<Index3D> to_delete;
+  int evicts = 0;
+  for (const Index3D& block_idx : device_blocks_) {
+    // evict the current index is not in the AABB
+    if ((min.array() <= block_idx.array()).all() &&
+        (block_idx.array() <= max.array()).all()) {
+      continue;
+    }
+    auto iit = blocks_.find(block_idx);
+    if (iit == blocks_.end()) {
+      continue;
+    }
+    evicts++;
+    blocks_[block_idx] = allocator_.toHost(iit->second);
+    to_delete.push_back(block_idx);
+  }
+  for (const Index3D& idx : to_delete) {
+    device_blocks_.erase(idx);
+  }
+}
+
+template <typename BlockType>
+void BlockLayer<BlockType>::prefetchBlocks(
+    const std::vector<Index3D>& block_indices) {
+  for (const Index3D& idx : block_indices) {
+    auto it = blocks_.find(idx);
+    typename BlockType::Ptr known_ptr;
+    if (it != blocks_.end()) {
+      known_ptr = it->second;
+    } else {
+      // The block has not been allocated --> invalidate the GPU Hash view
+      gpu_layer_view_up_to_date_ = false;
+    }
+    blocks_[idx] = allocator_.toDevice(known_ptr);
+    device_blocks_.emplace(idx);
+  }
+  std::cout << "prefetched " << block_indices.size() << " num device blocks "
+            << device_blocks_.size() << " total blocks " << blocks_.size()
+            << std::endl;
+  allocator_.printUsage();
 }
 
 // Block accessors by position.

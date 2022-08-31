@@ -55,9 +55,9 @@ void ProjectiveTsdfIntegrator::integrateFrame(
   blocks_in_view_timer.Stop();
 
   // Allocate blocks (CPU)
-  timing::Timer allocate_blocks_timer("tsdf/integrate/allocate_blocks");
+  timing::Timer prefetch_blocks_timer("tsdf/integrate/prefetch_blocks");
   allocateBlocksWhereRequired(block_indices, layer);
-  allocate_blocks_timer.Stop();
+  prefetch_blocks_timer.Stop();
 
   // Update identified blocks
   // Calls out to the child-class implementing the integation (CPU or GPU)
@@ -169,8 +169,7 @@ void ProjectiveTsdfIntegrator::updateBlocks(
   // Expand the buffers when needed
   if (num_blocks > block_indices_device_.size()) {
     constexpr float kBufferExpansionFactor = 1.5f;
-    const int new_size =
-        static_cast<int>(kBufferExpansionFactor * num_blocks);
+    const int new_size = static_cast<int>(kBufferExpansionFactor * num_blocks);
     block_indices_device_.reserve(new_size);
     block_ptrs_device_.reserve(new_size);
     block_indices_host_.reserve(new_size);
@@ -187,6 +186,8 @@ void ProjectiveTsdfIntegrator::updateBlocks(
 
   // We need the inverse transform in the kernel
   const Transform T_C_L = T_L_C.inverse();
+
+  layer_ptr->waitForPrefetch();
 
   // Kernel call - One ThreadBlock launched per VoxelBlock
   constexpr int kVoxelsPerSide = VoxelBlock<bool>::kVoxelsPerSide;

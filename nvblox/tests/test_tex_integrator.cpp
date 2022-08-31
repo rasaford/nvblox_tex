@@ -356,7 +356,7 @@ TEST_F(TexIntegrationTest, IntegrateTexToGroundTruthDistanceField) {
   mesh_integrator.textureMeshCPU(tex_layer, &mesh_layer);
 
   // Write to file
-  auto textured_mesh = io::packTextures(mesh_layer);
+  auto textured_mesh = io::packTextures(mesh_layer, tex_layer);
   io::outputMeshToPly(textured_mesh->mesh, "tex_sphere_mesh.ply");
   cv::imwrite("tex_sphere_mesh.png", textured_mesh->texture);
 }

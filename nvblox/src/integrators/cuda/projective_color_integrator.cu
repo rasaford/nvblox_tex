@@ -64,7 +64,7 @@ void ProjectiveColorIntegrator::integrateFrame(
   block_indices = reduceBlocksToThoseInTruncationBand(block_indices, tsdf_layer,
                                                       truncation_distance_m);
   blocks_in_band_timer.Stop();
-
+  
   // Allocate blocks (CPU)
   // We allocate color blocks where
   // - there are allocated TSDF blocks, AND

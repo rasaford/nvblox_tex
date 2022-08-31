@@ -62,7 +62,7 @@ void ProjectiveTexIntegrator::integrateFrame(
   block_indices = reduceBlocksToThoseInTruncationBand(block_indices, tsdf_layer,
                                                       truncation_distance_m);
   blocks_in_band_timer.Stop();
-
+  
   // Allocate blocks (CPU)
   // We allocate color blocks where
   // - there are allocated TSDF blocks, AND
@@ -76,6 +76,7 @@ void ProjectiveTexIntegrator::integrateFrame(
   updateNeighborIndicies(tsdf_layer, block_indices);
   update_neighbor_block_indices_timer.Stop();
 
+  tex_layer->waitForPrefetch();
   // Update normal directions for all voxels which do not have a voxel dir set
   // already
   timing::Timer update_normals_timer("tex/integrate/update_normals");
@@ -471,6 +472,7 @@ void ProjectiveTexIntegrator::updateBlocks(
   // clang-format on
   checkCudaErrors(cudaStreamSynchronize(integration_stream_));
   checkCudaErrors(cudaPeekAtLastError());
+
 }
 
 std::vector<Index3D>

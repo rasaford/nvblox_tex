@@ -109,7 +109,7 @@ TexMapper::TexMapper(float voxel_size_m, MemoryType memory_type)
 }
 
 void TexMapper::integrateDepth(const DepthImage& depth_frame,
-                                const Transform& T_L_C, const Camera& camera) {
+                               const Transform& T_L_C, const Camera& camera) {
   // Call the integrator.
   std::vector<Index3D> updated_blocks;
   tsdf_integrator_.integrateFrame(depth_frame, T_L_C, camera,
@@ -121,10 +121,10 @@ void TexMapper::integrateDepth(const DepthImage& depth_frame,
 }
 
 void TexMapper::integrateColor(const ColorImage& color_frame,
-                                const Transform& T_L_C, const Camera& camera) {
+                               const Transform& T_L_C, const Camera& camera) {
   tex_integrator_.integrateFrame(color_frame, T_L_C, camera,
-                                   layers_.get<TsdfLayer>(),
-                                   layers_.getPtr<TexLayer>());
+                                 layers_.get<TsdfLayer>(),
+                                 layers_.getPtr<TexLayer>());
 }
 
 std::vector<Index3D> TexMapper::updateMesh() {
@@ -138,8 +138,8 @@ std::vector<Index3D> TexMapper::updateMesh() {
                                       layers_.getPtr<MeshUVLayer>());
 
   mesh_integrator_.textureMesh(layers_.get<TexLayer>(),
-                             mesh_blocks_to_update_vector,
-                             layers_.getPtr<MeshUVLayer>());
+                               mesh_blocks_to_update_vector,
+                               layers_.getPtr<MeshUVLayer>());
 
   // Mark blocks as updated
   mesh_blocks_to_update_.clear();
@@ -167,8 +167,8 @@ std::vector<Index3D> TexMapper::updateEsdf() {
 }
 
 std::vector<Index3D> TexMapper::updateEsdfSlice(float slice_input_z_min,
-                                                 float slice_input_z_max,
-                                                 float slice_output_z) {
+                                                float slice_input_z_max,
+                                                float slice_output_z) {
   CHECK(esdf_mode_ != EsdfMode::k3D)
       << "Currently, we limit computation of the ESDF to 2d *or* 3d. Not both.";
   esdf_mode_ = EsdfMode::k2D;

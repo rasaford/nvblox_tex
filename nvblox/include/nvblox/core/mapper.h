@@ -25,8 +25,8 @@ limitations under the License.
 #include "nvblox/core/voxels.h"
 #include "nvblox/integrators/esdf_integrator.h"
 #include "nvblox/integrators/projective_color_integrator.h"
-#include "nvblox/integrators/projective_tsdf_integrator.h"
 #include "nvblox/integrators/projective_tex_integrator.h"
+#include "nvblox/integrators/projective_tsdf_integrator.h"
 #include "nvblox/mesh/mesh_integrator.h"
 
 namespace nvblox {
@@ -134,8 +134,9 @@ class RgbdMapper : public MapperBase {
 };
 
 /**
- * @brief The TexMapper is a variant of the RgbdMapper class that uses a TexIntegrator in place of the ColorIntegrator
- * 
+ * @brief The TexMapper is a variant of the RgbdMapper class that uses a
+ * TexIntegrator in place of the ColorIntegrator
+ *
  */
 class TexMapper : public MapperBase {
  public:

@@ -23,11 +23,12 @@ We depend on:
 - gtest
 - glog
 - gflags (to run experiments)
+- OpenCV (for image manipulations)
 - CUDA 10.2 - 11.5 (others might work but are untested)
 - Eigen (no need to explicitly install, a recent version is built into the library)
 Please run
 ```
-sudo apt-get install -y libgoogle-glog-dev libgtest-dev libgflags-dev python3-dev
+sudo apt-get install -y libgoogle-glog-dev libgtest-dev libgflags-dev python3-dev libopencv-dev
 cd /usr/src/googletest && sudo cmake . && sudo cmake --build . --target install
 ```
 

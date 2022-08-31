@@ -16,13 +16,15 @@ namespace io {
 // }
 
 std::unique_ptr<TexturedMesh> packTextures(const MeshUVLayer& mesh_layer,
+                                           const TexLayer& tex_layer,
                                            const int padding) {
-  return packTextures(mesh_layer, mesh_layer.getAllBlockIndices(), padding);
+  return packTextures(mesh_layer, tex_layer, mesh_layer.getAllBlockIndices(),
+                      padding);
 }
 
 std::unique_ptr<TexturedMesh> packTextures(
-    const MeshUVLayer& mesh_layer, const std::vector<Index3D> block_indices,
-    const int padding) {
+    const MeshUVLayer& mesh_layer, const TexLayer& tex_layer,
+    const std::vector<Index3D>& block_indices, const int padding) {
   const int patch_width = TexVoxel::kPatchWidth;
   MeshUV mesh = MeshUV::fromLayer(mesh_layer, block_indices);
 
@@ -37,10 +39,26 @@ std::unique_ptr<TexturedMesh> packTextures(
       continue;
     }
 
-    const std::vector<Color*> block_patches = block_ptr->getPatchVectorOnCPU();
-    patches.reserve(patches.size() + block_ptr->patches.size());
-    patches.insert(patches.end(), block_ptr->patches.begin(),
-                   block_ptr->patches.end());
+    const std::vector<Index6D> known_indices =
+        block_ptr->getPatchVectorOnCPU();
+    std::vector<Color*> colors;
+    colors.reserve(known_indices.size());
+
+    for (const Index6D& idx : known_indices) {
+      Index3D block_idx = Index3D(idx[0], idx[1], idx[2]);
+      Index3D voxel_idx = Index3D(idx[3], idx[4], idx[5]);
+      typename TexBlock::ConstPtr block = tex_layer.getBlockAtIndex(block_idx);
+
+      if (block.get() != nullptr) {
+        colors.push_back(const_cast<Color*>(
+            block->voxels[voxel_idx[0]][voxel_idx[1]][voxel_idx[2]].colors));
+      } else {
+        colors.push_back(nullptr);
+      }
+    }
+
+    patches.reserve(patches.size() + colors.size());
+    patches.insert(patches.end(), colors.begin(), colors.end());
 
     // insert the vertices in the mesh every patch belongs to
     // NOTE(rasaford) this assumes that the vertices in MeshUV::fromLayer() are
@@ -53,7 +71,7 @@ std::unique_ptr<TexturedMesh> packTextures(
       patch_vertices[patch_id].push_back(vertex_id);
     }
     num_vertices += block_vertex_patches.size();
-    num_patches += block_ptr->patches.size();
+    num_patches += colors.size();
   }
   // Sanity checks to make sure block level indices have been correctly
   // converted to global indices

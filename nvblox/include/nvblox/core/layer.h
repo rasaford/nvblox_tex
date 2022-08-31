@@ -18,6 +18,7 @@ limitations under the License.
 #include <memory>
 #include <vector>
 
+#include "nvblox/core/allocator.h"
 #include "nvblox/core/blox.h"
 #include "nvblox/core/hash.h"
 #include "nvblox/core/traits.h"
@@ -58,8 +59,7 @@ class BlockLayer : public BaseLayer {
   BlockLayer(float block_size, MemoryType memory_type)
       : block_size_(block_size),
         memory_type_(memory_type),
-        gpu_layer_view_up_to_date_(false) {}
-  virtual ~BlockLayer() {}
+        gpu_layer_view_up_to_date_(false){};
 
   // (Deep) Copy disabled
   // NOTE(alexmillane): We could write these if needed in the future
@@ -74,6 +74,18 @@ class BlockLayer : public BaseLayer {
   typename BlockType::Ptr getBlockAtIndex(const Index3D& index);
   typename BlockType::ConstPtr getBlockAtIndex(const Index3D& index) const;
   typename BlockType::Ptr allocateBlockAtIndex(const Index3D& index);
+
+  // Prefetching and eviction are used for memory management at the block level.
+  // Evicts old blocks from device to host memory asynchronously
+  void evictOldBlocks(const std::vector<Index3D>& block_indices);
+
+  // Prefetches the given blocks to device memory (performs an allocation if
+  // necessary)
+  void prefetchBlocks(const std::vector<Index3D>& block_indices);
+
+  // Blocks the current thread until all previously queued prefetching
+  // operations are completed.
+  void waitForPrefetch() { allocator_.waitForAllocations(); };
 
   // Block accessors by position.
   typename BlockType::Ptr getBlockAtPosition(const Vector3f& position);
@@ -101,6 +113,9 @@ class BlockLayer : public BaseLayer {
   GPULayerViewType getGpuLayerView() const;
 
  protected:
+  // Prefetching a block moves it to device memory in an asynchronous manner.
+  typename BlockType::Ptr prefetchBlockAtIndex(const Index3D& index);
+
   const float block_size_;
   const MemoryType memory_type_;
 
@@ -117,6 +132,11 @@ class BlockLayer : public BaseLayer {
   /// - The "mutable" here is to enable caching in const member functions.
   mutable bool gpu_layer_view_up_to_date_;
   mutable std::unique_ptr<GPULayerViewType> gpu_layer_view_;
+
+  // Set of all blocks which will eventually be on the device
+  Index3DSet device_blocks_;
+  // Allocator actually managing host and device memory
+  alloc::Allocator<BlockType> allocator_;
 };
 
 template <typename VoxelType>

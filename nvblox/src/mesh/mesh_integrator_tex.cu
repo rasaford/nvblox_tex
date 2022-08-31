@@ -356,9 +356,7 @@ void MeshUVIntegrator::textureMeshCPU(const TexLayer& tex_layer,
         // NOTE(rasaford) Since getVoxelAtPosition() requires a const pointer,
         // we have to do this ugly const_cast here. In reality the
         // TexVoxel*->colors attribute is non-const anyways.
-        const int patch_index = block->addPatch(
-            block_idx, voxel_idx, tex_voxel->kPatchWidth,
-            tex_voxel->kPatchWidth, const_cast<TexVoxel*>(tex_voxel)->colors);
+        const int patch_index = block->addPatch(block_idx, voxel_idx);
 
         Vector2f patch_uv;
         if (projectToUV(vertex, voxel_center, tex_layer.voxel_size(),

@@ -29,15 +29,22 @@ namespace nvblox {
 // amazing hardware- accelerated platform.
 enum class DeviceType { kCPU, kGPU };
 
-// How GPU data is stored, either in Device-only or unified (both) memory.
+// How GPU data is stored, either in Device-only, unified (both) memory or in an
+// ObjectPool. CAUTION: When unsing kPool a unified_ptr of this type will
+// degenerate into a weak_ptr (observing-only). Since such a pointer does not
+// manage it's own memory but is only given a small section of a larger block.
+// TODO(rasaford): fix the above behavior to keep all pointer types consistent.
 // NOTE(alexmillane): tag: c++17, switch to constexpr when we move to c++17.
 // clang-format off
-enum class MemoryType { kDevice, kUnified, kHost };
+enum class MemoryType { kDevice, kUnified, kHost, kPool };
 inline std::string toString(MemoryType memory_type) {
   switch (memory_type) {
     case MemoryType::kDevice: return "kDevice"; break;
     case MemoryType::kUnified: return "kUnified"; break;
-    default: return "kHost"; break;
+    case MemoryType::kHost: return "kHost"; break;
+    case MemoryType::kPool: return "kPool"; break;
+    // unreachable code:
+    default: return "undefined_ptr"; break;
   }
 }
 // clang-format on
