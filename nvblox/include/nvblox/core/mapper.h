@@ -150,7 +150,8 @@ class TexMapper : public MapperBase {
 
   void integrateDepth(const DepthImage& depth_frame, const Transform& T_L_C,
                       const Camera& camera);
-  void integrateColor(const ColorImage& color_frame, const Transform& T_L_C,
+  void integrateColor(const ColorImage& color_frame,
+                      const DepthImage& depth_frame, const Transform& T_L_C,
                       const Camera& camera);
 
   /// Updates the mesh blocks which require an update

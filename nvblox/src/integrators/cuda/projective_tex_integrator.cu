@@ -36,9 +36,9 @@ void ProjectiveTexIntegrator::finish() const {
 }
 
 void ProjectiveTexIntegrator::integrateFrame(
-    const ColorImage& color_frame, const Transform& T_L_C, const Camera& camera,
-    const TsdfLayer& tsdf_layer, TexLayer* tex_layer,
-    std::vector<Index3D>* updated_blocks) {
+    const ColorImage& color_frame, const DepthImage& depth_frame,
+    const Transform& T_L_C, const Camera& camera, const TsdfLayer& tsdf_layer,
+    TexLayer* tex_layer, std::vector<Index3D>* updated_blocks) {
   CHECK_NOTNULL(tex_layer);
   CHECK_EQ(tsdf_layer.block_size(), tex_layer->block_size());
 
@@ -48,8 +48,8 @@ void ProjectiveTexIntegrator::integrateFrame(
   const float truncation_distance_m = truncation_distance_vox_ * voxel_size;
 
   timing::Timer blocks_in_view_timer("tex/integrate/get_blocks_in_view");
-  std::vector<Index3D> block_indices =
-      getBlocksInView(T_L_C, camera, tex_layer->block_size());
+  std::vector<Index3D> block_indices = getBlocksInViewUsingRaycasting(
+      depth_frame, T_L_C, camera, tex_layer->block_size());
   blocks_in_view_timer.Stop();
 
   // Check which of these blocks are:
@@ -62,7 +62,7 @@ void ProjectiveTexIntegrator::integrateFrame(
   block_indices = reduceBlocksToThoseInTruncationBand(block_indices, tsdf_layer,
                                                       truncation_distance_m);
   blocks_in_band_timer.Stop();
-  
+
   // Allocate blocks (CPU)
   // We allocate color blocks where
   // - there are allocated TSDF blocks, AND
@@ -472,7 +472,6 @@ void ProjectiveTexIntegrator::updateBlocks(
   // clang-format on
   checkCudaErrors(cudaStreamSynchronize(integration_stream_));
   checkCudaErrors(cudaPeekAtLastError());
-
 }
 
 std::vector<Index3D>

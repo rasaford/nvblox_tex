@@ -121,8 +121,9 @@ void TexMapper::integrateDepth(const DepthImage& depth_frame,
 }
 
 void TexMapper::integrateColor(const ColorImage& color_frame,
+                               const DepthImage& depth_frame,
                                const Transform& T_L_C, const Camera& camera) {
-  tex_integrator_.integrateFrame(color_frame, T_L_C, camera,
+  tex_integrator_.integrateFrame(color_frame, depth_frame, T_L_C, camera,
                                  layers_.get<TsdfLayer>(),
                                  layers_.getPtr<TexLayer>());
 }
