@@ -2,6 +2,7 @@
 #include <cmath>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <opencv2/opencv.hpp>
 
 namespace nvblox {
@@ -28,57 +29,50 @@ std::unique_ptr<TexturedMesh> packTextures(
   const int patch_width = TexVoxel::kPatchWidth;
   MeshUV mesh = MeshUV::fromLayer(mesh_layer, block_indices);
 
-  // collect all patches and corresponding patch_vertices
+  // vector of all color patches to pack
   std::vector<Color*> patches;
+  // for each index in the patches vector this map gives the corresponding
+  // vertex indices in the merged mesh
   std::unordered_map<int, std::vector<int>> patch_vertices;
   int num_vertices = 0;
   int num_patches = 0;
   for (const Index3D& block_index : block_indices) {
-    MeshBlockUV::ConstPtr block_ptr = mesh_layer.getBlockAtIndex(block_index);
-    if (block_ptr == nullptr) {
-      continue;
-    }
+    MeshBlockUV::ConstPtr mesh_block = mesh_layer.getBlockAtIndex(block_index);
+    TexBlock::ConstPtr tex_block = tex_layer.getBlockAtIndex(block_index);
+    if (tex_block.get() != nullptr) {
+      constexpr size_t kVoxelsPerSide3 = TexBlock::kVoxelsPerSide *
+                                         TexBlock::kVoxelsPerSide *
+                                         TexBlock::kVoxelsPerSide;
 
-    const std::vector<Index6D> known_indices =
-        block_ptr->getPatchVectorOnCPU();
-    std::vector<Color*> colors;
-    colors.reserve(known_indices.size());
+      patches.resize(num_patches + kVoxelsPerSide3);
+      std::vector<Index3D> voxels = mesh_block->getVoxelsVectorOnCPU();
 
-    for (const Index6D& idx : known_indices) {
-      Index3D block_idx = Index3D(idx[0], idx[1], idx[2]);
-      Index3D voxel_idx = Index3D(idx[3], idx[4], idx[5]);
-      typename TexBlock::ConstPtr block = tex_layer.getBlockAtIndex(block_idx);
-
-      if (block.get() != nullptr) {
-        colors.push_back(const_cast<Color*>(
-            block->voxels[voxel_idx[0]][voxel_idx[1]][voxel_idx[2]].colors));
-      } else {
-        colors.push_back(nullptr);
+      for (int i = 0; i < voxels.size(); i++) {
+        const Index3D& v = voxels[i];
+        const int linear_idx =
+            TexBlock::kVoxelsPerSide * TexBlock::kVoxelsPerSide * v[0] +
+            TexBlock::kVoxelsPerSide * v[1] + v[2];
+        const int patch_idx = num_patches + linear_idx;
+        const int vertex_idx = num_vertices + i;
+        patches[patch_idx] =
+            const_cast<Color*>(tex_block->voxels[v[0]][v[1]][v[2]].colors);
+        patch_vertices[patch_idx].push_back(vertex_idx);
       }
+      num_patches += kVoxelsPerSide3;
     }
-
-    patches.reserve(patches.size() + colors.size());
-    patches.insert(patches.end(), colors.begin(), colors.end());
-
-    // insert the vertices in the mesh every patch belongs to
-    // NOTE(rasaford) this assumes that the vertices in MeshUV::fromLayer() are
-    // inserted sequentially and in the order given by block_indices
-    const std::vector<int> block_vertex_patches =
-        block_ptr->getVertexPatchVectorOnCPU();
-    for (int i = 0; i < block_vertex_patches.size(); ++i) {
-      const int patch_id = num_patches + block_vertex_patches[i];
-      const int vertex_id = num_vertices + i;
-      patch_vertices[patch_id].push_back(vertex_id);
-    }
-    num_vertices += block_vertex_patches.size();
-    num_patches += colors.size();
+    num_vertices += mesh_block->vertices.size();
   }
   // Sanity checks to make sure block level indices have been correctly
   // converted to global indices
   CHECK_EQ(mesh.vertices.size(), num_vertices);
   CHECK_EQ(patches.size(), num_patches);
 
-  const int texture_patch_width = static_cast<int>(ceil(sqrt(patches.size())));
+  const int num_valid_patches = std::accumulate(
+      patches.begin(), patches.end(), 0,
+      [](int a, Color* ptr) { return a + static_cast<int>(ptr != nullptr); });
+
+  const int texture_patch_width =
+      static_cast<int>(ceil(sqrt(num_valid_patches)));
   const int padded_patch_width = patch_width + 2 * padding;
   const int texture_width = padded_patch_width * texture_patch_width;
 
@@ -92,11 +86,15 @@ std::unique_ptr<TexturedMesh> packTextures(
 
   // Offset UV coordinates in mesh and insert the corresponding patch in each
   // texture tile
+  int patch_cnt = 0;
   for (int patch_idx = 0; patch_idx < patches.size(); ++patch_idx) {
     const Color* patch = patches[patch_idx];
+    if (patch == nullptr) {
+      continue;
+    }
     const Index2D top_left(
-        1 + padded_patch_width * (patch_idx % texture_patch_width),
-        1 + padded_patch_width * (patch_idx / texture_patch_width));
+        1 + padded_patch_width * (patch_cnt % texture_patch_width),
+        1 + padded_patch_width * (patch_cnt / texture_patch_width));
     const Vector2f top_left_uv = top_left.array().cast<float>() / texture_width;
 
     // Offset and scale patch uvs to fit in the global texture
@@ -138,6 +136,7 @@ std::unique_ptr<TexturedMesh> packTextures(
     patch_colors.copyTo(texture(cv::Rect(
         cv::Point(top_left[0], top_left[1]),
         cv::Point(top_left[0] + patch_width, top_left[1] + patch_width))));
+    patch_cnt++;
   }
 
   // allocate heap memory for the object and it's contents
