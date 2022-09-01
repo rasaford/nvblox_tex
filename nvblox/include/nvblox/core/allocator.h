@@ -61,34 +61,23 @@ class DeviceAllocator {
   static inline void deallocate(T* ptr) { checkCudaErrors(cudaFree(ptr)); }
 };
 
-struct FreeBlock {
-  void* next_free = nullptr;
-  void* base_block = nullptr;
-
-  inline void reset() {
-    next_free = nullptr;
-    base_block = nullptr;
-  }
-};
-
 // Memory allocator for Device and host memory
 // NOTE(rasaford): This pool will never free up memory, unless it is destroyed
 template <typename BlockType, class Allocator>
 class ObjectPool {
  private:
-  struct MemoryBlock {
+  struct Block {
     // Memory managed by this Block
     BlockType* memory;
+
     // Array of FreeBlock for each BlockType objects that could be allocated
-    FreeBlock* free_ptrs;
-
+    int* next_free;
+    int free_idx;
     int count;
-    const size_t capacity;
+    size_t capacity;
 
-    MemoryBlock* next_block;
-
-    MemoryBlock(size_t capacity, int device, const cudaStream_t& stream)
-        : count(0), capacity(capacity), next_block(nullptr) {
+    Block(size_t capacity, int device, const cudaStream_t& stream)
+        : count(0), capacity(capacity), free_idx(-1) {
       if (capacity < 1) {
         throw std::invalid_argument("capacity has to be greater than 1");
       }
@@ -97,78 +86,104 @@ class ObjectPool {
       if (memory == nullptr) {
         throw std::bad_alloc();
       }
-      free_ptrs = new FreeBlock[capacity];
+      next_free = new int[capacity];
+      std::fill_n(next_free, capacity, -1);
     }
 
-    ~MemoryBlock() {
-      Allocator::deallocate(memory);
-      delete[] free_ptrs;
+    Block(const Block&) = delete;             // no-copy
+    Block& operator=(const Block&) = delete;  // no copy-assignment
+
+    // move constructor
+    Block(Block&& block)
+        // move the data to this block
+        : memory(block.memory),
+          next_free(block.next_free),
+          free_idx(block.free_idx),
+          count(block.count),
+          capacity(block.capacity) {
+      // delete owned ptrs from the other block
+      block.memory = nullptr;
+      block.next_free = nullptr;
+    }
+    // move-assignment
+    Block& operator=(Block&& block) {
+      // move the data to this block
+      memory = block.memory;
+      next_free = block.next_free;
+      free_idx = block.free_idx;
+      count = block.count;
+      capacity = block.capacity;
+      // delete owned ptrs from the other block
+      block.memory = nullptr;
+      block.next_free = nullptr;
+      return *this;
+    }
+
+    ~Block() {
+      if (memory != nullptr) Allocator::deallocate(memory);
+      if (next_free != nullptr) delete[] next_free;
     }
   };
 
  public:
-  ObjectPool(int device, cudaStream_t stream, int initial_capacity = 1 << 9,
+  ObjectPool(int device, cudaStream_t stream, size_t initial_capacity = 1 << 9,
              size_t max_block_length = 1 << 12)
-      : first_deleted_(nullptr),
-        first_block_(initial_capacity, device, stream),
+      : block_size_(initial_capacity),
         max_block_length_(max_block_length),
         device(device),
         stream(stream) {
     if (max_block_length < 1) {
       throw std::invalid_argument("max_block_length must be at last 1");
     }
-
-    block_memory_ = first_block_.memory;
-    last_block_ = &first_block_;
+    blocks_.emplace_back(initial_capacity, device, stream);
+    priorities_.emplace_back(0);
   };
 
-  ~ObjectPool() {
-    MemoryBlock* block = first_block_.next_block;
-    while (block != nullptr) {
-      MemoryBlock* next = block->next_block;
-      delete block;
-      block = next;
-    }
-  }
+  ~ObjectPool() {}
 
   BlockType* alloc() {
-    BlockType* address;
-    MemoryBlock* base_block = last_block_;
+    BlockType* address = nullptr;
+    int block_idx = priorities_[priorities_.size() - 1];
+    for (const int b : priorities_) {
+      if (blocks_[b].count < blocks_[b].capacity) {
+        block_idx = b;
+        break;
+      }
+    }
+    Block& base_block = blocks_[block_idx];
+    // std::cout << "block_idx " << block_idx << std::endl;
 
-    if (first_deleted_ != nullptr) {
+    if (base_block.free_idx != -1) {
       // reuse a previously freed block
-      base_block = reinterpret_cast<MemoryBlock*>(first_deleted_->base_block);
-      FreeBlock* free_ptrs_block =
-          reinterpret_cast<FreeBlock*>(base_block->free_ptrs);
-      FreeBlock* next_free_block =
-          reinterpret_cast<FreeBlock*>(first_deleted_->next_free);
+      int chunk_idx = base_block.free_idx;
+      base_block.free_idx = base_block.next_free[chunk_idx];
+      base_block.next_free[chunk_idx] = -1;
 
-      size_t block_idx = first_deleted_ - free_ptrs_block;
-      if (block_idx >= base_block->capacity) {
-        throw std::runtime_error("Block idx must be in MemoryBlock* capacity");
+      if (chunk_idx >= base_block.capacity) {
+        throw std::runtime_error(
+            "alloc: chunk_idx must be in range [0, capacity)");
       }
 
-      address = base_block->memory + block_idx;
+      address = base_block.memory + chunk_idx;
       cudaMemsetAsync(address, 0, sizeof(BlockType), stream);
-      FreeBlock* tmp = first_deleted_;
-      first_deleted_ = next_free_block;
-      tmp->reset();
     } else {
       // allocate a new block
-      if (base_block->count >= base_block->capacity) {
-        base_block = allocate_block();
+      if (base_block.count >= base_block.capacity) {
+        block_idx = allocate_block();
       }
-      address = block_memory_ + base_block->count;
+      // if no chunks are free in a block, we can allocate by simply giving out
+      // chunks in order
+      address = blocks_[block_idx].memory + blocks_[block_idx].count;
     }
 
-    if (address < base_block->memory ||
-        address >= base_block->memory + base_block->capacity) {
+    if (address < blocks_[block_idx].memory ||
+        address >= blocks_[block_idx].memory + blocks_[block_idx].capacity) {
       throw std::runtime_error("invalid allocation ptr out of range");
     }
 
     // store the allocated ptr for referencing in dealloc
-    base_block->count++;
-    allocated_[address] = base_block;
+    blocks_[block_idx].count++;
+    allocated_[address] = block_idx;
     return address;
   }
 
@@ -183,30 +198,52 @@ class ObjectPool {
     }
 
     // update the free block of *ptr to reflect the deallocated state
-    MemoryBlock* base_block = it->second;
-    if (base_block->memory > pointer ||
-        pointer > base_block->memory + base_block->capacity) {
+    const int block_idx = it->second;
+    Block& block = blocks_[block_idx];
+    if (block.memory > pointer || pointer > block.memory + block.capacity) {
       throw std::runtime_error(
           "dealloc: BlockType* is not in the base block memory range");
     }
 
-    const size_t block_idx = pointer - base_block->memory;
-    FreeBlock* new_free_block = &base_block->free_ptrs[block_idx];
+    const size_t chunk_idx = pointer - block.memory;
+    // Chunk* new_free_block = &block.free_ptrs[chunk_idx];
 
-    if (new_free_block > base_block->free_ptrs + base_block->capacity) {
+    if (chunk_idx >= block.capacity) {
       throw std::runtime_error(
-          "dealloc: FreeBlock* is not in block memory range");
+          "dealloc: chunk_idx is not within the range [0, capacity)");
     }
 
-    new_free_block->next_free = first_deleted_;
-    new_free_block->base_block = base_block;
-    base_block->count--;
-    if (base_block->count < 0) {
+    // update the Block
+    block.next_free[chunk_idx] = block.free_idx;
+    block.free_idx = chunk_idx;
+    block.count--;
+
+    if (block.count < 0) {
       std::runtime_error("invalid count");
-    } else if (base_block->count == 0) {
-      std::cout << "empty block " << new_free_block << std::endl;
+    } else if (block.count == 0) {
+      std::cout << "free memory block " << block_idx << std::endl;
+      blocks_.erase(blocks_.begin() + block_idx);
+      auto prio = std::find(priorities_.begin(), priorities_.end(), block_idx);
+      priorities_.erase(prio);
     }
-    first_deleted_ = new_free_block;
+
+    // free block tracking based on minimal free space
+    const int free_count = block.capacity - block.count;
+    if (free_count < min_free_count_) {
+      // insert in priorities (similar to insertion sort)
+      const int block_prio =
+          std::find(priorities_.begin(), priorities_.end(), block_idx) -
+          priorities_.begin();
+      for (int i = block_prio; i > 0; i--) priorities_[i] = priorities_[i - 1];
+      priorities_[0] = block_idx;
+
+      min_free_count_ = free_count;
+      // // new_free_block->next_free = next_free_chunk_
+      // next_free_chunk_ = new_free_block;
+      // next_free_idx_ = block_idx;
+    }
+
+    // first_deleted_ = new_free_block;
 
     allocated_.erase(pointer);
   }
@@ -223,16 +260,13 @@ class ObjectPool {
     int num_blocks = 0;
     int total_count = 0;
     int total_cap = 0;
-    // TODO(rasaford): For some reason we need a const_cast here --> investigate
-    MemoryBlock* start = const_cast<MemoryBlock*>(&first_block_);
-    while (start != nullptr) {
-      min = std::min(min, start->count);
-      max = std::max(max, start->count);
-      sum += start->count;
-      total_count += start->count;
-      total_cap += start->capacity;
+    for (const Block& block : blocks_) {
+      min = std::min(min, block.count);
+      max = std::max(max, block.count);
+      sum += block.count;
+      total_count += block.count;
+      total_cap += block.capacity;
       num_blocks++;
-      start = start->next_block;
     }
     std::cout << "Blocks Usage: " << std::setw(6) << total_count << " / "
               << std::setw(6) << total_cap << " "
@@ -245,34 +279,37 @@ class ObjectPool {
   }
 
  protected:
-  MemoryBlock* allocate_block() {
-    size_t size = last_block_->count;
-    if (size < max_block_length_) {
-      size *= 2;
-      if (size < last_block_->count) {
-        std::overflow_error(
-            "allocation is too big, resulting in MemoryBlock::size overflow");
-      }
-    }
-    size = std::min(size, max_block_length_);
+  int allocate_block() {
+    // size_t size = block_size_;
+    // if (size < max_block_length_) {
+    //   size *= 2;
+    //   // if (size < 0) {
+    //   //   std::overflow_error(
+    //   //       "allocation is too big, resulting in block_size_ overflow");
+    //   // }
+    // }
+    block_size_ = std::min(block_size_ * 2, max_block_length_);
 
     // create a new memory block and update the internal management structure
-    MemoryBlock* new_block = new MemoryBlock(size, device, stream);
-    last_block_->next_block = new_block;
-    last_block_ = new_block;
-    block_memory_ = new_block->memory;
-
-    return new_block;
+    const int block_idx = blocks_.size();
+    std::cout << "allocate new block " << block_size_ << " " << device << " "
+              << stream << std::endl;
+    blocks_.emplace_back(block_size_, device, stream);
+    priorities_.emplace_back(block_idx);
+    return block_idx;
   }
 
   // allocator management
-  MemoryBlock first_block_;
-  MemoryBlock* last_block_;
-  BlockType* block_memory_;
-  FreeBlock* first_deleted_;
+  std::vector<Block> blocks_;
+  std::vector<int> priorities_;
+
+  int next_free_idx_;
+  size_t min_free_count_;
+
+  size_t block_size_;
   size_t max_block_length_;
   // allocated index keeping track of live allocations
-  std::unordered_map<BlockType*, MemoryBlock*> allocated_;
+  std::unordered_map<BlockType*, int> allocated_;
   // CUDA parameters
   cudaStream_t stream;
   int device;
@@ -310,7 +347,6 @@ class Allocator {
                       device_stream);
       host_pool->dealloc(ptr);
     }
-    to_device_timer.Stop();
     return unified_ptr<BlockType>(device_ptr, MemoryType::kPool);
   }
 
@@ -327,7 +363,6 @@ class Allocator {
                       host_stream);
       device_pool->dealloc(ptr);
     }
-    to_host_timer.Stop();
     return unified_ptr<BlockType>(host_ptr, MemoryType::kPool);
   }
 
