@@ -238,7 +238,6 @@ class ObjectPool {
     if (block.count < 0) {
       std::runtime_error("invalid count");
     } else if (block.count == 0) {
-      std::cout << "free memory block " << block_id << std::endl;
       blocks_.erase(block_id);
       priorities_.erase(block_id);
     }
