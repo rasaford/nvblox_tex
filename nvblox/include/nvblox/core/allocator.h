@@ -327,8 +327,8 @@ class Allocator {
 
   Allocator() {
     cudaGetDevice(&device);
-    cudaStreamCreate(&host_stream);
-    cudaStreamCreate(&device_stream);
+    cudaStreamCreateWithFlags(&host_stream, cudaStreamNonBlocking);
+    cudaStreamCreateWithFlags(&device_stream, cudaStreamNonBlocking);
     host_pool = std::make_unique<HostPool>(device, host_stream);
     device_pool = std::make_unique<DevicePool>(device, device_stream);
   };
