@@ -5,7 +5,9 @@
 #include <memory.h>
 #include <algorithm>
 #include <iomanip>
+#include <tuple>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 #include "nvblox/core/blox.h"
 #include "nvblox/core/hash.h"
@@ -123,6 +125,10 @@ class ObjectPool {
       if (memory != nullptr) Allocator::deallocate(memory);
       if (next_free != nullptr) delete[] next_free;
     }
+
+    // NOTE(rasaford) priority is maximized when allocating. Here, we want to
+    // give blocks with few free spots high priority
+    inline int priority() const { return -(capacity - count); }
   };
 
  public:
@@ -130,60 +136,67 @@ class ObjectPool {
              size_t max_block_length = 1 << 12)
       : block_size_(initial_capacity),
         max_block_length_(max_block_length),
+        next_free_idx_(0),
         device(device),
         stream(stream) {
     if (max_block_length < 1) {
       throw std::invalid_argument("max_block_length must be at last 1");
     }
-    blocks_.emplace_back(initial_capacity, device, stream);
-    priorities_.emplace_back(0);
+    blocks_.emplace(std::piecewise_construct,
+                    std::forward_as_tuple(next_free_idx_),
+                    std::forward_as_tuple(initial_capacity, device, stream));
+    priorities_.emplace(next_free_idx_, 0);
+    next_free_idx_++;
   };
 
   ~ObjectPool() {}
 
   BlockType* alloc() {
     BlockType* address = nullptr;
-    int block_idx = priorities_[priorities_.size() - 1];
-    for (const int b : priorities_) {
-      if (blocks_[b].count < blocks_[b].capacity) {
-        block_idx = b;
-        break;
+    int block_id = 0;
+    int prio = INT_MIN;
+    for (const auto& pair : blocks_) {
+      const int block_priority = priorities_.find(pair.first)->second;
+      if (block_priority != 0 && block_priority > prio) {
+        block_id = pair.first;
+        prio = block_priority;
       }
     }
-    Block& base_block = blocks_[block_idx];
-    // std::cout << "block_idx " << block_idx << std::endl;
+    Block* base_block = &(blocks_.find(block_id)->second);
 
-    if (base_block.free_idx != -1) {
+    if (base_block->free_idx != -1) {
       // reuse a previously freed block
-      int chunk_idx = base_block.free_idx;
-      base_block.free_idx = base_block.next_free[chunk_idx];
-      base_block.next_free[chunk_idx] = -1;
+      int chunk_idx = base_block->free_idx;
+      base_block->free_idx = base_block->next_free[chunk_idx];
+      base_block->next_free[chunk_idx] = -1;
 
-      if (chunk_idx >= base_block.capacity) {
+      if (chunk_idx >= base_block->capacity) {
         throw std::runtime_error(
             "alloc: chunk_idx must be in range [0, capacity)");
       }
 
-      address = base_block.memory + chunk_idx;
+      address = base_block->memory + chunk_idx;
       cudaMemsetAsync(address, 0, sizeof(BlockType), stream);
     } else {
       // allocate a new block
-      if (base_block.count >= base_block.capacity) {
-        block_idx = allocate_block();
+      if (base_block->count >= base_block->capacity) {
+        block_id = allocate_block();
+        base_block = &blocks_.find(block_id)->second;
       }
       // if no chunks are free in a block, we can allocate by simply giving out
       // chunks in order
-      address = blocks_[block_idx].memory + blocks_[block_idx].count;
+      address = base_block->memory + base_block->count;
     }
 
-    if (address < blocks_[block_idx].memory ||
-        address >= blocks_[block_idx].memory + blocks_[block_idx].capacity) {
+    if (address < base_block->memory ||
+        address >= base_block->memory + base_block->capacity) {
       throw std::runtime_error("invalid allocation ptr out of range");
     }
 
     // store the allocated ptr for referencing in dealloc
-    blocks_[block_idx].count++;
-    allocated_[address] = block_idx;
+    base_block->count++;
+    allocated_[address] = block_id;
+    priorities_[block_id] = base_block->priority();
     return address;
   }
 
@@ -198,8 +211,12 @@ class ObjectPool {
     }
 
     // update the free block of *ptr to reflect the deallocated state
-    const int block_idx = it->second;
-    Block& block = blocks_[block_idx];
+    const int block_id = it->second;
+    const auto iit = blocks_.find(block_id);
+    if (iit == blocks_.end()) {
+      throw std::runtime_error("dealloc: block_id is invalid");
+    }
+    Block& block = iit->second;
     if (block.memory > pointer || pointer > block.memory + block.capacity) {
       throw std::runtime_error(
           "dealloc: BlockType* is not in the base block memory range");
@@ -221,29 +238,12 @@ class ObjectPool {
     if (block.count < 0) {
       std::runtime_error("invalid count");
     } else if (block.count == 0) {
-      std::cout << "free memory block " << block_idx << std::endl;
-      blocks_.erase(blocks_.begin() + block_idx);
-      auto prio = std::find(priorities_.begin(), priorities_.end(), block_idx);
-      priorities_.erase(prio);
+      std::cout << "free memory block " << block_id << std::endl;
+      blocks_.erase(block_id);
+      priorities_.erase(block_id);
     }
 
-    // free block tracking based on minimal free space
-    const int free_count = block.capacity - block.count;
-    if (free_count < min_free_count_) {
-      // insert in priorities (similar to insertion sort)
-      const int block_prio =
-          std::find(priorities_.begin(), priorities_.end(), block_idx) -
-          priorities_.begin();
-      for (int i = block_prio; i > 0; i--) priorities_[i] = priorities_[i - 1];
-      priorities_[0] = block_idx;
-
-      min_free_count_ = free_count;
-      // // new_free_block->next_free = next_free_chunk_
-      // next_free_chunk_ = new_free_block;
-      // next_free_idx_ = block_idx;
-    }
-
-    // first_deleted_ = new_free_block;
+    priorities_[block_id] = block.priority();
 
     allocated_.erase(pointer);
   }
@@ -260,7 +260,8 @@ class ObjectPool {
     int num_blocks = 0;
     int total_count = 0;
     int total_cap = 0;
-    for (const Block& block : blocks_) {
+    for (const auto& pair : blocks_) {
+      const Block& block = pair.second;
       min = std::min(min, block.count);
       max = std::max(max, block.count);
       sum += block.count;
@@ -290,19 +291,23 @@ class ObjectPool {
     // }
     block_size_ = std::min(block_size_ * 2, max_block_length_);
 
+    int block_id = next_free_idx_;
+    next_free_idx_++;
     // create a new memory block and update the internal management structure
-    const int block_idx = blocks_.size();
-    std::cout << "allocate new block " << block_size_ << " " << device << " "
-              << stream << std::endl;
-    blocks_.emplace_back(block_size_, device, stream);
-    priorities_.emplace_back(block_idx);
-    return block_idx;
+    std::cout << "allocate new block " << block_id << ": " << block_size_ << " "
+              << device << " " << stream << std::endl;
+    blocks_.emplace(std::piecewise_construct, std::forward_as_tuple(block_id),
+                    std::forward_as_tuple(block_size_, device, stream));
+    Block& block = blocks_.find(block_id)->second;
+    priorities_.emplace(block_id, block.priority());
+    return block_id;
   }
 
   // allocator management
-  std::vector<Block> blocks_;
-  std::vector<int> priorities_;
+  std::unordered_map<int, Block> blocks_;
+  std::unordered_map<int, int> priorities_;
 
+  int next_block_id;
   int next_free_idx_;
   size_t min_free_count_;
 

@@ -104,8 +104,11 @@ std::vector<Index3D> RgbdMapper::updateEsdfSlice(float slice_input_z_min,
 
 TexMapper::TexMapper(float voxel_size_m, MemoryType memory_type)
     : voxel_size_m_(voxel_size_m) {
-  layers_ = LayerCake::create<TsdfLayer, TexLayer, EsdfLayer, MeshUVLayer>(
-      voxel_size_m_, memory_type);
+  layers_ = LayerCake::create<TsdfLayer, TexLayer, EsdfLayer>(voxel_size_m_,
+                                                              memory_type);
+  // NOTE(rasaford): Keep the mesh layer in Host memory since we can't access it's elements on
+  // the GPU directly anyways
+  layers_.add<MeshUVLayer>(MemoryType::kHost);
 }
 
 void TexMapper::integrateDepth(const DepthImage& depth_frame,

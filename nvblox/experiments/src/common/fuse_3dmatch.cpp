@@ -456,12 +456,6 @@ bool TexFuse3DMatch::integrateFrame(const int frame_number) {
     mapper_.updateMesh();
   }
 
-  if ((frame_number + 1) % esdf_frame_subsampling_ == 0) {
-    timing::Timer timer_integrate_esdf("3dmatch/integrate_esdf");
-    mapper_.updateEsdfSlice(z_min_, z_max_, z_slice_);
-    timer_integrate_esdf.Stop();
-  }
-
   per_frame_timer.Stop();
 
   return true;
