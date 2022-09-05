@@ -31,6 +31,7 @@ class HostAllocator {
     // https://developer.nvidia.com/blog/improving-gpu-memory-oversubscription-performance/
     checkCudaErrors(cudaMallocManaged(&ptr, size, cudaMemAttachGlobal));
     checkCudaErrors(cudaMemPrefetchAsync(ptr, size, cudaCpuDeviceId, stream));
+    checkCudaErrors(cudaMemsetAsync(ptr, 0, size, stream));
     checkCudaErrors(cudaMemAdvise(ptr, size, cudaMemAdviseSetPreferredLocation,
                                   cudaCpuDeviceId));
     // NOTE(rasaford): Create a mapping for the memory on the device, such that
@@ -54,6 +55,7 @@ class DeviceAllocator {
     // swapped out to Host memory.
     checkCudaErrors(cudaMallocManaged(&ptr, size, cudaMemAttachGlobal));
     checkCudaErrors(cudaMemPrefetchAsync(ptr, size, device, stream));
+    checkCudaErrors(cudaMemsetAsync(ptr, 0, size, stream));
     checkCudaErrors(
         cudaMemAdvise(ptr, size, cudaMemAdviseSetPreferredLocation, device));
     return ptr;
@@ -176,6 +178,11 @@ class ObjectPool {
       }
 
       address = base_block->memory + chunk_idx;
+      // Only if the caller asks for initialization is the BlockType at the
+      // given out address set to 0
+      if (init) {
+        cudaMemsetAsync(address, 0, sizeof(BlockType), stream);
+      }
     } else {
       // allocate a new block
       if (base_block->count >= base_block->capacity) {
@@ -190,12 +197,6 @@ class ObjectPool {
     if (address < base_block->memory ||
         address >= base_block->memory + base_block->capacity) {
       throw std::runtime_error("invalid allocation ptr out of range");
-    }
-
-    // Only if the caller asks for initialization is the BlockType at the given
-    // out address set to 0
-    if (init) {
-      cudaMemsetAsync(address, 0, sizeof(BlockType), stream);
     }
 
     // store the allocated ptr for referencing in dealloc
