@@ -75,10 +75,10 @@ class ObjectPool {
     // Array of FreeBlock for each BlockType objects that could be allocated
     int* next_free;
     int free_idx;
-    int count;
+    size_t count;
     size_t capacity;
 
-    Block(size_t capacity, int device, const cudaStream_t& stream)
+    Block(const size_t capacity, const int& device, const cudaStream_t& stream)
         : count(0), capacity(capacity), free_idx(-1) {
       if (capacity < 1) {
         throw std::invalid_argument("capacity has to be greater than 1");
@@ -128,7 +128,9 @@ class ObjectPool {
 
     // NOTE(rasaford) priority is maximized when allocating. Here, we want to
     // give blocks with few free spots high priority
-    inline int priority() const { return -(capacity - count); }
+    inline int priority() const {
+      return -(static_cast<int>(capacity - count));
+    }
   };
 
  public:
@@ -136,24 +138,23 @@ class ObjectPool {
              size_t max_block_length = 1 << 12)
       : block_size_(initial_capacity),
         max_block_length_(max_block_length),
-        next_free_idx_(0),
+        next_block_id_(0),
         device(device),
         stream(stream) {
-    if (max_block_length < 1) {
+    if (max_block_length_ < 1) {
       throw std::invalid_argument("max_block_length must be at last 1");
     }
     blocks_.emplace(std::piecewise_construct,
-                    std::forward_as_tuple(next_free_idx_),
+                    std::forward_as_tuple(next_block_id_),
                     std::forward_as_tuple(initial_capacity, device, stream));
-    priorities_.emplace(next_free_idx_, 0);
-    next_free_idx_++;
+    priorities_.emplace(next_block_id_, 0);
+    next_block_id_++;
   };
 
   ~ObjectPool() {}
 
   BlockType* alloc() {
-    BlockType* address = nullptr;
-    int block_id = 0;
+    size_t block_id = 0;
     int prio = INT_MIN;
     for (const auto& pair : blocks_) {
       const int block_priority = priorities_.find(pair.first)->second;
@@ -163,10 +164,11 @@ class ObjectPool {
       }
     }
     Block* base_block = &(blocks_.find(block_id)->second);
+    BlockType* address = nullptr;
 
-    if (base_block->free_idx != -1) {
+    if (base_block->free_idx >= 0) {
       // reuse a previously freed block
-      int chunk_idx = base_block->free_idx;
+      size_t chunk_idx = static_cast<size_t>(base_block->free_idx);
       base_block->free_idx = base_block->next_free[chunk_idx];
       base_block->next_free[chunk_idx] = -1;
 
@@ -222,8 +224,7 @@ class ObjectPool {
           "dealloc: BlockType* is not in the base block memory range");
     }
 
-    const size_t chunk_idx = pointer - block.memory;
-    // Chunk* new_free_block = &block.free_ptrs[chunk_idx];
+    const auto chunk_idx = static_cast<size_t>(pointer - block.memory);
 
     if (chunk_idx >= block.capacity) {
       throw std::runtime_error(
@@ -232,18 +233,24 @@ class ObjectPool {
 
     // update the Block
     block.next_free[chunk_idx] = block.free_idx;
-    block.free_idx = chunk_idx;
+    block.free_idx = static_cast<int>(chunk_idx);
+    if (block.count == 0)
+      throw std::runtime_error("dealloc: Invalid block count");
     block.count--;
 
-    if (block.count < 0) {
-      std::runtime_error("invalid count");
-    } else if (block.count == 0) {
+    // NOTE(rasaford): if no BlockType* are live within this block, delete it.
+    // Since the blocks_ map owns the Block&, erasing it in the map will also
+    // deconstruct the obejct and free the associated memeory
+    if (block.count == 0) {
       blocks_.erase(block_id);
       priorities_.erase(block_id);
+    } else {
+      // NOTE(rasaford): Only update the priorities if the current block_id is
+      // still valid
+      priorities_[block_id] = block.priority();
     }
-
-    priorities_[block_id] = block.priority();
-
+    // delete the reference to the given ptr once deallocation was
+    // successful.
     allocated_.erase(pointer);
   }
 
@@ -253,12 +260,12 @@ class ObjectPool {
   }
 
   void printUsage() const {
-    int min = INT_MAX;
-    int max = INT_MIN;
-    int sum = 0;
-    int num_blocks = 0;
-    int total_count = 0;
-    int total_cap = 0;
+    size_t min = ULONG_MAX;
+    size_t max = 0;
+    size_t sum = 0;
+    size_t num_blocks = 0;
+    size_t total_count = 0;
+    size_t total_cap = 0;
     for (const auto& pair : blocks_) {
       const Block& block = pair.second;
       min = std::min(min, block.count);
@@ -270,7 +277,7 @@ class ObjectPool {
     }
     std::cout << "Blocks Usage: " << std::setw(6) << total_count << " / "
               << std::setw(6) << total_cap << " "
-              << 100.f * (float)total_count / total_cap << "%"
+              << 100.f * (double)total_count / total_cap << "%"
               << " Num Blocks: " << std::setw(3) << num_blocks
               << " Memory Usage: " << std::setw(5)
               << total_count * sizeof(BlockType) / (1024 * 1024) << " / "
@@ -279,22 +286,12 @@ class ObjectPool {
   }
 
  protected:
-  int allocate_block() {
-    // size_t size = block_size_;
-    // if (size < max_block_length_) {
-    //   size *= 2;
-    //   // if (size < 0) {
-    //   //   std::overflow_error(
-    //   //       "allocation is too big, resulting in block_size_ overflow");
-    //   // }
-    // }
+  size_t allocate_block() {
     block_size_ = std::min(block_size_ * 2, max_block_length_);
 
-    int block_id = next_free_idx_;
-    next_free_idx_++;
+    int block_id = next_block_id_;
+    next_block_id_++;
     // create a new memory block and update the internal management structure
-    std::cout << "allocate new block " << block_id << ": " << block_size_ << " "
-              << device << " " << stream << std::endl;
     blocks_.emplace(std::piecewise_construct, std::forward_as_tuple(block_id),
                     std::forward_as_tuple(block_size_, device, stream));
     Block& block = blocks_.find(block_id)->second;
@@ -303,17 +300,15 @@ class ObjectPool {
   }
 
   // allocator management
-  std::unordered_map<int, Block> blocks_;
-  std::unordered_map<int, int> priorities_;
+  std::unordered_map<size_t, Block> blocks_;
+  std::unordered_map<size_t, int> priorities_;
 
-  int next_block_id;
-  int next_free_idx_;
-  size_t min_free_count_;
+  size_t next_block_id_;
 
   size_t block_size_;
-  size_t max_block_length_;
+  const size_t max_block_length_;
   // allocated index keeping track of live allocations
-  std::unordered_map<BlockType*, int> allocated_;
+  std::unordered_map<BlockType*, size_t> allocated_;
   // CUDA parameters
   cudaStream_t stream;
   int device;
