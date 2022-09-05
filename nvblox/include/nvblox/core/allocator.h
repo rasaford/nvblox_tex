@@ -31,7 +31,6 @@ class HostAllocator {
     // https://developer.nvidia.com/blog/improving-gpu-memory-oversubscription-performance/
     checkCudaErrors(cudaMallocManaged(&ptr, size, cudaMemAttachGlobal));
     checkCudaErrors(cudaMemPrefetchAsync(ptr, size, cudaCpuDeviceId, stream));
-    checkCudaErrors(cudaMemsetAsync(ptr, 0, size, stream));
     checkCudaErrors(cudaMemAdvise(ptr, size, cudaMemAdviseSetPreferredLocation,
                                   cudaCpuDeviceId));
     // NOTE(rasaford): Create a mapping for the memory on the device, such that
@@ -55,7 +54,6 @@ class DeviceAllocator {
     // swapped out to Host memory.
     checkCudaErrors(cudaMallocManaged(&ptr, size, cudaMemAttachGlobal));
     checkCudaErrors(cudaMemPrefetchAsync(ptr, size, device, stream));
-    checkCudaErrors(cudaMemsetAsync(ptr, 0, size, stream));
     checkCudaErrors(
         cudaMemAdvise(ptr, size, cudaMemAdviseSetPreferredLocation, device));
     return ptr;
@@ -153,7 +151,7 @@ class ObjectPool {
 
   ~ObjectPool() {}
 
-  BlockType* alloc() {
+  BlockType* alloc(const bool init = false) {
     size_t block_id = 0;
     int prio = INT_MIN;
     for (const auto& pair : blocks_) {
@@ -178,7 +176,6 @@ class ObjectPool {
       }
 
       address = base_block->memory + chunk_idx;
-      cudaMemsetAsync(address, 0, sizeof(BlockType), stream);
     } else {
       // allocate a new block
       if (base_block->count >= base_block->capacity) {
@@ -193,6 +190,12 @@ class ObjectPool {
     if (address < base_block->memory ||
         address >= base_block->memory + base_block->capacity) {
       throw std::runtime_error("invalid allocation ptr out of range");
+    }
+
+    // Only if the caller asks for initialization is the BlockType at the given
+    // out address set to 0
+    if (init) {
+      cudaMemsetAsync(address, 0, sizeof(BlockType), stream);
     }
 
     // store the allocated ptr for referencing in dealloc
@@ -339,9 +342,11 @@ class Allocator {
     if (device_pool->isAllocated(ptr)) {
       return block;
     }
-
-    BlockType* device_ptr = device_pool->alloc();
-    if (ptr != nullptr && host_pool->isAllocated(ptr)) {
+    // NOTE(rasford): Initialize the newly allocated memory only if the given
+    // block is new. Otherwise we copy the content in host memory to the device
+    const bool init = ptr == nullptr || !host_pool->isAllocated(ptr);
+    BlockType* device_ptr = device_pool->alloc(init);
+    if (!init) {
       cudaMemcpyAsync(device_ptr, ptr, sizeof(BlockType), cudaMemcpyDefault,
                       device_stream);
       host_pool->dealloc(ptr);
@@ -356,8 +361,11 @@ class Allocator {
       return block;
     }
 
-    BlockType* host_ptr = host_pool->alloc();
-    if (ptr != nullptr && device_pool->isAllocated(ptr)) {
+    // NOTE(rasford): Initialize the newly allocated memory only if the given
+    // block is new. Otherwise we copy the content in host device to the host.
+    const bool init = ptr == nullptr || !device_pool->isAllocated(ptr);
+    BlockType* host_ptr = host_pool->alloc(init);
+    if (!init) {
       cudaMemcpyAsync(host_ptr, ptr, sizeof(BlockType), cudaMemcpyDefault,
                       host_stream);
       device_pool->dealloc(ptr);
